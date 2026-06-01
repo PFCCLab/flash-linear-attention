@@ -1,10 +1,10 @@
 
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class LinearAttentionConfig(PretrainedConfig):
+class LinearAttentionConfig(paddleformers.transformers.PretrainedConfig):
 
     model_type = 'linear_attn'
     keys_to_ignore_at_inference = ['past_key_values']

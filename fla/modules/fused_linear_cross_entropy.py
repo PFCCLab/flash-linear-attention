@@ -5,22 +5,26 @@
 
 from functools import partial
 
+import paddle
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import triton
 import triton.language as tl
-from torch.distributed import DeviceMesh
-from torch.distributed.tensor import Replicate, Shard, distribute_module
-from torch.distributed.tensor.parallel import ParallelStyle
 
 from fla.ops.utils import logsumexp_fwd
 from fla.ops.utils.op import exp
 from fla.utils import IS_AMD, input_guard
 
 try:
-    from torch.distributed.tensor import DTensor
+    from torch.distributed import DeviceMesh
+    from torch.distributed.tensor import DTensor, Replicate, Shard, distribute_module
+    from torch.distributed.tensor.parallel import ParallelStyle
 except (ImportError, AttributeError):
+    DeviceMesh = None
+    Replicate = None
+    Shard = None
+    distribute_module = None
+    ParallelStyle = object
     DTensor = None
 
 # The hard limit of TRITON_MAX_TENSOR_NUMEL is 1048576
@@ -240,7 +244,7 @@ def fused_linear_cross_entropy_forward(
         c_x = x[start:end]
         # when doing matmul, use the original precision
         # [C, V]
-        c_logits = F.linear(c_x, weight, bias)
+        c_logits = paddle.compat.nn.functional.linear(c_x, weight, bias)
         c_target = target[start:end]
         # [C]
         # keep lse in fp32 to maintain precision
@@ -249,7 +253,7 @@ def fused_linear_cross_entropy_forward(
         # unreduced loss
         c_loss = loss[start:end]
         if use_l2warp:
-            c_maxx, c_ids = torch.max(c_logits, -1, keepdim=True)
+            c_maxx, c_ids = paddle.compat.max(c_logits, -1, keepdim=True)
 
         # Here we calculate the gradient of c_logits in place so we can save memory.
         cross_entropy_kernel[(c_logits.shape[0],)](
@@ -430,7 +434,7 @@ class FusedLinearCrossEntropyFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, do):
-        dx, dw, db = ctx.saved_tensors
+        dx, dw, db = ctx.saved_tensor()
         dx, dw, db = fused_linear_cross_entropy_backward(do, dx, dw, db)
         return dx, None, dw, db, None, None, None, None, None, None, None
 
@@ -530,7 +534,6 @@ class FusedLinearCrossEntropyLoss(nn.Module):
         self.use_l2warp = use_l2warp
         self.l2_penalty_factor = l2_penalty_factor
 
-    @torch.compiler.disable
     def forward(
         self,
         x: torch.Tensor,

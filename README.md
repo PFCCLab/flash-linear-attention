@@ -1,11 +1,40 @@
 <div align="center">
 
-# 💥 Flash Linear Attention
+# 💥 Flash Linear Attention ❤️ PaddlePadddle
 
 [![hf_model](https://img.shields.io/badge/-Models-gray.svg?logo=huggingface&style=flat-square)](https://huggingface.co/fla-hub) [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?&logo=discord&logoColor=white&style=flat-square)](https://discord.gg/vDaJTmKNcS)
 
 </div>
 
+> [!NOTE]
+> This repo is a fork of the original flash-linear-attention project, with modifications to enhance compatibility and integration with PaddlePaddle.
+> Currently, only the layers module is supported in this repository.
+> * Among its components, LogLinearMamba2 depends on the third-party library causal-conv1d, which is not yet supported.
+> * The other 30 components are fully supported.
+> Support for the models module will be added in the future.
+>
+> **Installation**
+>
+> ```bash
+> pip install paddlepaddle_gpu  # Install PaddlePaddle with GPU support, refer to https://www.paddlepaddle.org.cn/install/quick for more details
+> git clone https://github.com/PFCCLab/flash-linear-attention.git
+> cd flash-linear-attention
+> pip install --no-build-isolation . -v
+> ```
+>
+> **Usage**
+>
+> ```python
+> import paddle
+> paddle.enable_compat(scope={"fla"})  # Enable torch proxy before importing flashinfer
+> import fla
+> # use fla
+> ```
+>
+
+The original README.md content is as follows:
+
+---
 This repo provides efficient implementations for emerging model architectures, with a focus on efficient sequence modeling (e.g., linear attention, state space models, and their hybrids). **All implementations are written purely in PyTorch and Triton, making them platform-agnostic.** Currently verified platforms include NVIDIA, AMD, and Intel. **Any pull requests are welcome!**
 
 <div align="center">
@@ -157,6 +186,8 @@ torch.Size([32, 2048, 1024])
 
 We provide the implementations of models that are compatible with 🤗 Transformers library.
 Here's an example of how to initialize a GLA model from the default configs in `fla`:
+> [!NOTE]
+> This example is not yet supported, please wait for future development.
 
 ```py
 >>> from fla.models import GLAConfig
@@ -263,6 +294,8 @@ We offer a collection of fused modules in `fla.modules` to facilitate faster tra
 ### Generation
 
 Upon successfully pretraining a model, it becomes accessible for generating text using the 🤗 text generation APIs.
+> [!NOTE]
+> This example is not yet supported, please wait for future development.
 In the following, we give a generation example:
 ```py
 >>> import fla

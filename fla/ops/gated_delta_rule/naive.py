@@ -1,7 +1,7 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
+import paddle
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 
 
@@ -97,11 +97,11 @@ def naive_chunk_gated_delta_rule(
     T = q.shape[-2]
     pad_len = (BT - (T % BT)) % BT
     if pad_len > 0:
-        q = F.pad(q, (0, 0, 0, pad_len))
-        k = F.pad(k, (0, 0, 0, pad_len))
-        v = F.pad(v, (0, 0, 0, pad_len))
-        beta = F.pad(beta, (0, pad_len))
-        g = F.pad(g, (0, pad_len))
+        q = paddle.compat.nn.functional.pad(q, (0, 0, 0, pad_len))
+        k = paddle.compat.nn.functional.pad(k, (0, 0, 0, pad_len))
+        v = paddle.compat.nn.functional.pad(v, (0, 0, 0, pad_len))
+        beta = paddle.compat.nn.functional.pad(beta, (0, pad_len))
+        g = paddle.compat.nn.functional.pad(g, (0, pad_len))
 
     q, k, v, beta, g = map(lambda x: x.to(torch.float32), [q, k, v, beta, g])
     decay = g

@@ -1,43 +1,24 @@
+import paddleformers
 
 
-from transformers.configuration_utils import PretrainedConfig
 
 
-class KDAConfig(PretrainedConfig):
+class KDAConfig(paddleformers.transformers.PretrainedConfig):
     model_type = 'kda'
     keys_to_ignore_at_inference = ['past_key_values']
 
-    def __init__(
-        self,
-        attn_mode: str = "chunk",
-        hidden_size: int = 2048,
-        expand_v: float = 1.0,
-        use_short_conv: bool = True,
-        allow_neg_eigval: bool = False,
-        conv_size: int = 4,
-        head_dim: int = 128,
-        num_heads: int = 16,
-        num_v_heads: int | None = None,
-        max_position_embeddings: int = 2048,
-        hidden_ratio: int | None = 4,
-        intermediate_size: int | None = None,
-        hidden_act: str = "swish",
-        num_hidden_layers: int = 24,
-        norm_eps: float = 1e-6,
-        attn: dict | None = None,
-        use_cache: bool = True,
-        pad_token_id: int | None = None,
-        bos_token_id: int = 1,
-        eos_token_id: int = 2,
-        tie_word_embeddings: bool = False,
-        initializer_range: float = 0.02,
-        fuse_norm: bool = True,
-        fuse_swiglu: bool = True,
-        fuse_cross_entropy: bool = True,
-        use_l2warp: bool = False,
-        vocab_size: int = 32000,
-        **kwargs,
-    ):
+    def __init__(self, attn_mode: str = 'chunk', hidden_size: int = 2048,
+                 expand_v: float = 1.0, use_short_conv: bool = True, allow_neg_eigval:
+                 bool = False, safe_gate: bool = False, lower_bound: (float | None) = None,
+                 conv_size: int = 4, head_dim: int = 128, num_heads: int = 16, num_v_heads:
+                 (int | None) = None, max_position_embeddings: int = 2048, hidden_ratio:
+                 (int | None) = 4, intermediate_size: (int | None) = None, hidden_act:
+                 str = 'swish', num_hidden_layers: int = 24, norm_eps: float = 1e-06, attn:
+                 (dict | None) = None, use_cache: bool = True, pad_token_id: (int | None
+                                                                              ) = None, bos_token_id: int = 1, eos_token_id: int = 2,
+                 tie_word_embeddings: bool = False, initializer_range: float = 0.02,
+                 fuse_norm: bool = True, fuse_swiglu: bool = True, fuse_cross_entropy:
+                 bool = True, use_l2warp: bool = False, vocab_size: int = 32000, **kwargs):
         self.attn_mode = attn_mode
         self.hidden_size = hidden_size
         self.expand_v = expand_v
@@ -63,6 +44,12 @@ class KDAConfig(PretrainedConfig):
         self.use_l2warp = use_l2warp
         self.vocab_size = vocab_size
         self.allow_neg_eigval = allow_neg_eigval
+        self.safe_gate = safe_gate
+        self.lower_bound = lower_bound
+        if safe_gate and lower_bound is None:
+            raise ValueError(
+                '`lower_bound` must be specified when `safe_gate=True` (recommended: -5).'
+            )
 
         if attn is not None:
             if not isinstance(attn, dict):

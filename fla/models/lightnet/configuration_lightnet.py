@@ -1,10 +1,10 @@
 
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class LightNetConfig(PretrainedConfig):
+class LightNetConfig(paddleformers.transformers.PretrainedConfig):
 
     model_type = 'lightnet'
     keys_to_ignore_at_inference = ['past_key_values']

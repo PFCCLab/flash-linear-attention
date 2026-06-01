@@ -8,7 +8,6 @@ from fla.ops.delta_rule import chunk_delta_rule
 from fla.ops.gated_delta_rule import chunk_gated_delta_rule
 
 
-@torch.compiler.disable
 def chunk_gated_delta_product_ref(
     q: torch.Tensor,
     k: torch.Tensor,

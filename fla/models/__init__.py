@@ -1,3 +1,8 @@
+raise ImportError(
+    "fla.models is not yet supported in this PaddlePaddle fork. "
+    "Only fla.layers is currently available. "
+    "See README for details."
+)
 
 from fla.models.abc import ABCConfig, ABCForCausalLM, ABCModel
 from fla.models.bitnet import BitNetConfig, BitNetForCausalLM, BitNetModel

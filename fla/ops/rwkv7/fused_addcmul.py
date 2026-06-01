@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 
+import paddle
 import torch
 import triton
 import triton.language as tl
@@ -24,12 +25,7 @@ def identity_decorator(fn):
 current_python_version = Version(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
 min_torch_compile_version = Version("3.11")
 fla_use_compile = os.getenv('FLA_USE_COMPILE', '1').lower() in ('1', 'true', 'yes')
-
-if current_python_version >= min_torch_compile_version and fla_use_compile:
-    torch_compile = torch.compile(fullgraph=True)
-else:
-    logger.warning('torch.compile is not available in Python 3.10, using identity decorator instead')
-    torch_compile = identity_decorator
+torch_compile = identity_decorator
 
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if IS_AMD else [2, 4, 8, 16, 32]
 
@@ -255,7 +251,7 @@ class Rwkv7FusedAddcmul(torch.autograd.Function):
     @input_guard
     def backward(ctx, dxr,
                  dxw, dxk, dxv, dxa, dxg):
-        hidden_states, delta, x_r, x_w, x_k, x_v, x_a, x_g = ctx.saved_tensors
+        hidden_states, delta, x_r, x_w, x_k, x_v, x_a, x_g = ctx.saved_tensor()
 
         d_hiddn, d_xx = addcmul_bwd1(dxr, dxw, dxk, dxv, dxa, dxg, x_r, x_w, x_k, x_v, x_a, x_g,
                                      hidden_states, delta, ctx.use_xg)
@@ -282,14 +278,13 @@ def fused_addcmul_rwkv7(
 
 
 def torch_addcmul_rwkv7(hidden_states, delta, xr, xw, xk, xv, xa, xg=None):
-    oxr = torch.addcmul(hidden_states, delta, xr)
-    oxw = torch.addcmul(hidden_states, delta, xw)
-    oxk = torch.addcmul(hidden_states, delta, xk)
-    oxv = torch.addcmul(hidden_states, delta, xv)
-    oxa = torch.addcmul(hidden_states, delta, xa)
+    oxr = paddle.add(hidden_states, 1 * delta * xr)
+    oxw = paddle.add(hidden_states, 1 * delta * xw)
+    oxk = paddle.add(hidden_states, 1 * delta * xk)
+    oxv = paddle.add(hidden_states, 1 * delta * xv)
+    oxa = paddle.add(hidden_states, 1 * delta * xa)
     if xg is not None:
-        oxg = torch.addcmul(hidden_states, delta, xg)
+        oxg = paddle.add(hidden_states, 1 * delta * xg)
         return oxr, oxw, oxk, oxv, oxa, oxg
     else:
-        return oxr, oxw, oxk, oxv, oxa, None
         return oxr, oxw, oxk, oxv, oxa, None

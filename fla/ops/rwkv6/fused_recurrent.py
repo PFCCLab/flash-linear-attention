@@ -536,7 +536,7 @@ class FusedRecurrentRWKV6Function(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dht):
-        q, k, v, w, u, initial_state = ctx.saved_tensors
+        q, k, v, w, u, initial_state = ctx.saved_tensor()
 
         dq, dk, dv, dw, du, dh0 = fused_recurrent_rwkv6_bwd(
             q=q,

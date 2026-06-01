@@ -629,7 +629,7 @@ def chunk_abc_bwd_kernel_K(
 
     p_q = tl.make_block_ptr(q + i_bh * T*K, (T, K), (K, 1), (i_t * BT, i_k * BK), (BT, BK), (1, 0))
     p_k = tl.make_block_ptr(k + i_bh * T*K, (T, K), (K, 1), (i_t * BT, i_k * BK), (BT, BK), (1, 0))
-    p_A = tl.make_block_ptr(A + (i_k*n_bh+i_bh) * T * BT, (T, BT ), (BT, 1), (i_t * BT, 0), (BT, BT), (1, 0))
+    p_A = tl.make_block_ptr(A + (i_k*n_bh+i_bh) * T * BT, (T, BT), (BT, 1), (i_t * BT, 0), (BT, BT), (1, 0))
 
     # [BT, BK]
     b_q = tl.load(p_q, boundary_check=(0, 1))
@@ -674,7 +674,7 @@ def chunk_abc_bwd_kernel_K(
         # [BT, BV]
         b_dv = b_v * tl.dot(b_k, b_dh, allow_tf32=False)
         tl.store(p_dv, b_dv.to(p_dv.dtype.element_ty), boundary_check=(0, 1))
-    p_dA = tl.make_block_ptr(dA + i_bh * T * BT, (T, BT ), (BT, 1), (i_t * BT, 0), (BT, BT), (1, 0))
+    p_dA = tl.make_block_ptr(dA + i_bh * T * BT, (T, BT), (BT, 1), (i_t * BT, 0), (BT, BT), (1, 0))
     # [BT, BT]
     b_dA = tl.load(p_dA, boundary_check=(0, 1))
     # [BT, BK]
@@ -947,7 +947,7 @@ class ChunkABCFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, dov, dht=None):
-        q, k, v, s, z, ok, p, hk, hv, Av = ctx.saved_tensors
+        q, k, v, s, z, ok, p, hk, hv, Av = ctx.saved_tensor()
         B, H, T, K, V, M = *q.shape, v.shape[-1], s.shape[-1]
         BT, BC = ctx.BT, 16
         BK = min(64, triton.next_power_of_2(K))
@@ -1073,7 +1073,6 @@ class ChunkABCFunction(torch.autograd.Function):
         return dq, dk, dv, ds, None, None
 
 
-@torch.compiler.disable
 def chunk_abc(
     q: torch.Tensor,
     k: torch.Tensor,

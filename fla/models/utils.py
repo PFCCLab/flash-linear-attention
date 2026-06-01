@@ -2,25 +2,14 @@ from __future__ import annotations
 
 import inspect
 from typing import Any
-
+import paddleformers
 import torch
-import transformers
-from packaging import version
-from transformers.cache_utils import Cache as HFCacheBase
-from transformers.generation import GenerationMixin
-from transformers.utils.deprecation import deprecate_kwarg
+from paddleformers.transformers.cache_utils import Cache as HFCacheBase
 
-_TF_VERSION = transformers.__version__
-_NEED_NEW = "4.53.3"
-_IS_TRANSFORMERS_4_56_PLUS = version.parse(_TF_VERSION) >= version.parse("4.56.0")
-
-if version.parse(_TF_VERSION) > version.parse(_NEED_NEW):
-    from transformers.cache_utils import CacheLayerMixin
-else:
-    CacheLayerMixin = object
+_IS_TRANSFORMERS_4_56_PLUS = False
 
 
-class FLALayer(CacheLayerMixin):
+class FLALayer(paddleformers.transformers.cache_utils.CacheLayerMixin):
     is_compileable = True
     is_sliding = False
 
@@ -164,7 +153,7 @@ class FLALayer(CacheLayerMixin):
         pass
 
 
-class LegacyFLACache(HFCacheBase):
+class LegacyFLACache(paddleformers.transformers.cache_utils.Cache):
     """
     A cache used for storing hidden states produced by flash linear attention models.
 
@@ -290,7 +279,6 @@ class LegacyFLACache(HFCacheBase):
         return tuple(self.states)
 
     @classmethod
-    @torch.compiler.disable
     def from_legacy_cache(
         cls,
         past_key_values: tuple | None = None,
@@ -305,7 +293,7 @@ class LegacyFLACache(HFCacheBase):
         return cache
 
 
-class FLACache(HFCacheBase):
+class FLACache(paddleformers.transformers.cache_utils.Cache):
     """
     A cache used for storing hidden states produced by flash linear attention models.
 
@@ -389,7 +377,6 @@ class FLACache(HFCacheBase):
         return tuple(self[i] for i in range(len(self.layers)))
 
     @classmethod
-    @torch.compiler.disable
     def from_legacy_cache(
         cls,
         past_key_values: tuple[dict[str, Any], ...] | None = None,
@@ -405,7 +392,7 @@ class FLACache(HFCacheBase):
         return cache
 
 
-class FLAGenerationMixin(GenerationMixin):
+class FLAGenerationMixin(paddleformers.generation.utils.GenerationMixin):
     """
     Flash Linear Attention Generation Mixin that provides version-compatible generation methods.
     This mixin handles transformers library version differences, particularly for prepare_inputs_for_generation.
@@ -414,7 +401,6 @@ class FLAGenerationMixin(GenerationMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
     def prepare_inputs_for_generation(
         self,
         input_ids: torch.LongTensor = None,
@@ -485,7 +471,7 @@ class FLAGenerationMixin(GenerationMixin):
         return model_inputs
 
 
-if version.parse(_TF_VERSION) > version.parse(_NEED_NEW):
+if True:
     class Cache(FLACache):
         def __init__(self, seen_tokens: int = 0, **kwargs: Any) -> None:
             super().__init__(seen_tokens=seen_tokens, **kwargs)

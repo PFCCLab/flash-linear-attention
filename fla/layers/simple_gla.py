@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -107,10 +108,10 @@ class SimpleGatedLinearAttention(nn.Module):
         self.head_k_dim = self.key_dim // num_heads
         self.head_v_dim = self.value_dim // num_heads
 
-        self.q_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, self.key_dim_per_group, bias=False)
-        self.v_proj = nn.Linear(hidden_size, self.value_dim_per_group, bias=False)
-        self.g_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim_per_group, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim_per_group, bias=False)
+        self.g_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
 
         if use_short_conv:
             self.conv_size = conv_size
@@ -133,7 +134,7 @@ class SimpleGatedLinearAttention(nn.Module):
                 activation='silu',
             )
 
-        self.gk_proj = nn.Linear(hidden_size, self.num_heads)
+        self.gk_proj = paddle.compat.nn.Linear(hidden_size, self.num_heads)
 
         if gate_fn == 'swish' and fuse_norm:
             self.g_norm_swish_gate = FusedRMSNormGated(
@@ -151,7 +152,7 @@ class SimpleGatedLinearAttention(nn.Module):
                 dtype=torch.float32
             )
             self.gate_fn = ACT2FN[gate_fn]
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
 
         self.gate_logit_normalizer = gate_logit_normalizer
 

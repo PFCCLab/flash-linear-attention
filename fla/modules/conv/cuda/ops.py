@@ -99,8 +99,8 @@ class FastCausalConv1dFn(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, dout, *args):
-        x, weight, bias, seq_idx, initial_states = ctx.saved_tensors
-        dx = torch.empty_like(x, memory_format=torch.contiguous_format)
+        x, weight, bias, seq_idx, initial_states = ctx.saved_tensor()
+        dx = torch.empty_like(x)
         x = rearrange(x, 'b t d -> b d t')
         dx = rearrange(dx, 'b t d -> b d t')
         dout = rearrange(dout, 'b t d -> b d t')

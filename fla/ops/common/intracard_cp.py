@@ -21,6 +21,8 @@ from fla.ops.cp.chunk_delta_h import pre_process_fwd_kernel_merged
 from fla.ops.utils.index import prepare_chunk_indices, prepare_chunk_offsets
 from fla.utils import get_multiprocessor_count
 
+from ...paddle_utils import *
+
 logger = logging.getLogger(__name__)
 
 
@@ -437,7 +439,7 @@ def intracard_fwd_h(
         cu_seqlens_cpu = cu_seqlens.cpu()
 
     seq_lens = torch.diff(cu_seqlens_cpu)
-    max_seq_len = int(seq_lens.max().item())
+    max_seq_len = int(seq_lens._max().item())
     num_sms = get_multiprocessor_count()
     subseq_len = compute_subseq_len(max_seq_len, num_sms, H, chunk_size)
 

@@ -11,11 +11,12 @@ from collections.abc import Callable
 from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
-
+import paddle
 import torch
 import triton
 from packaging import version
 
+from .paddle_utils import *
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -81,7 +82,7 @@ check_environments()
 
 
 def get_abs_err(x, y):
-    return (x.detach()-y.detach()).flatten().abs().max().item()
+    return (x.detach() - y.detach()).flatten().abs()._max().item()
 
 
 def get_err_ratio(x, y):
@@ -242,8 +243,6 @@ def require_version(version, hint):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(ctx, *args, **kwargs):
-            from transformers.utils.versions import require_version
-            require_version(version, hint)
             return fn(ctx,
                       *(i if not isinstance(i, torch.Tensor) else i.contiguous() for i in args),
                       **{k: (v if not isinstance(v, torch.Tensor) else v.contiguous()) for k, v in kwargs.items()})
@@ -407,7 +406,7 @@ def deprecate_kwarg(
 
 def checkpoint(fn):
     def wrapper(*args, **kwargs):
-        return torch.utils.checkpoint.checkpoint(fn, *args, **kwargs)
+        return paddle.distributed.fleet.utils.recompute(fn, *args, **kwargs)
     return wrapper
 
 
@@ -457,7 +456,7 @@ device_name = map_triton_backend_to_torch_device()
 IS_AMD = (device_platform == 'hip')
 IS_INTEL = (device_platform == 'xpu')
 IS_NVIDIA = (device_platform == 'cuda')
-IS_INTEL_ALCHEMIST = (IS_INTEL and 'Intel(R) Arc(TM) A' in torch.xpu.get_device_name(0))
+IS_INTEL_ALCHEMIST = False
 IS_NVIDIA_HOPPER = (IS_NVIDIA and ('NVIDIA H' in torch.cuda.get_device_name(0) or torch.cuda.get_device_capability()[0] >= 9))
 IS_NVIDIA_BLACKWELL = (IS_NVIDIA and torch.cuda.get_device_capability()[0] == 10)
 USE_CUDA_GRAPH = (IS_NVIDIA and os.environ.get('FLA_USE_CUDA_GRAPH', '0') == '1')
@@ -517,21 +516,20 @@ def check_shared_mem(arch: str = "none", tensor_idx: int = 0) -> bool:
     except Exception:
         return False
 
+def _identity_decorator(fn=None, **_kwargs):
+    def decorator(f):
+        return f
+    if fn is not None:
+        return decorator(fn)
+    return decorator
+autocast_custom_fwd = _identity_decorator
+autocast_custom_bwd = _identity_decorator
 
-if check_pytorch_version('2.4'):
-    device = 'cuda' if device == 'cpu' else device
-    autocast_custom_fwd = functools.partial(torch.amp.custom_fwd, device_type=device)
-    autocast_custom_bwd = functools.partial(torch.amp.custom_bwd, device_type=device)
 
-    def custom_device_ctx(index: int):
+def custom_device_ctx(index: int):
+    if hasattr(device_torch_lib, 'device'):
         return device_torch_lib.device(index)
-else:
-    assert device == 'cuda', 'Only cuda device is supported for PyTorch version < 2.4.0.'
-    autocast_custom_fwd = device_torch_lib.amp.custom_fwd
-    autocast_custom_bwd = device_torch_lib.amp.custom_bwd
-
-    def custom_device_ctx(index: int):
-        return torch.cuda.device(index)
+    return torch.cuda.device(index)
 
 
 def _register_aliases():

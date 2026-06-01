@@ -8,6 +8,7 @@ import math
 import warnings
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -65,7 +66,7 @@ class RWKV6Attention(nn.Module):
         self.x_proj = nn.Sequential(
             LerpLinear(hidden_size, proj_low_rank_dim * 5),
             nn.Tanh(),
-            nn.Linear(proj_low_rank_dim * 5, hidden_size, bias=False),
+            paddle.compat.nn.Linear(proj_low_rank_dim * 5, hidden_size, bias=False),
         )
         self.x_bias = nn.Parameter(torch.zeros(5, hidden_size))
 
@@ -78,11 +79,11 @@ class RWKV6Attention(nn.Module):
 
         # TODO: fuse GroupNorm and output gate
         self.g_norm = GroupNorm(self.num_heads, self.value_dim, elementwise_affine=elementwise_affine, bias=True, eps=norm_eps)
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
         self.gate_fn = ACT2FN[gate_fn]
 
         try:
-            from transformers.modeling_utils import _init_weights
+            from paddleformers.transformers.model_utils import _init_weights
         except ImportError:
             _init_weights = True
         if _init_weights:
@@ -98,7 +99,7 @@ class RWKV6Attention(nn.Module):
     def _initialize_weights(self, module: nn.Module):
         if getattr(module, "_is_hf_initialized", False):
             return
-        if isinstance(module, nn.Linear):
+        if isinstance(module, paddle.compat.nn.Linear):
             nn.init.xavier_uniform_(module.weight, gain=2 ** -2.5)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
@@ -232,12 +233,12 @@ class LoRA(nn.Module):
             raise ValueError(f"Not supported activation `{activation}`.")
 
         self.lora = nn.Sequential(
-            nn.Linear(input_dim, low_rank_dim, bias=False),
+            paddle.compat.nn.Linear(input_dim, low_rank_dim, bias=False),
             self.activation,
-            nn.Linear(low_rank_dim, output_dim, bias=bias),
+            paddle.compat.nn.Linear(low_rank_dim, output_dim, bias=bias),
         )
         try:
-            from transformers.modeling_utils import _init_weights
+            from paddleformers.transformers.model_utils import _init_weights
         except ImportError:
             _init_weights = True
         if _init_weights:
@@ -306,7 +307,7 @@ class LerpLinear(nn.Module):
 
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
         if low_rank_dim is None:
-            self.linear = nn.Linear(input_dim, output_dim, bias=False)
+            self.linear = paddle.compat.nn.Linear(input_dim, output_dim, bias=False)
         else:
             self.linear = LoRA(input_dim, output_dim, low_rank_dim)
         self.mu = nn.Parameter(torch.zeros(input_dim))
@@ -341,7 +342,7 @@ class DDLerpLinear(nn.Module):
 
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
         if low_rank_dim is None:
-            self.linear = nn.Linear(input_dim, output_dim, bias=False)
+            self.linear = paddle.compat.nn.Linear(input_dim, output_dim, bias=False)
         else:
             self.linear = LoRA(input_dim, output_dim, low_rank_dim)
 

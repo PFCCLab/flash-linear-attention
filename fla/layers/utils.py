@@ -1,13 +1,14 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
-
 # Code is adapted from flash-attn.bert_padding.py
+
 
 
 import torch
 from einops import rearrange, repeat
-
 from fla.ops.utils.index import prepare_cu_seqlens_from_mask, prepare_lens_from_mask
 from fla.utils import tensor_cache
+
+from ..paddle_utils import *
 
 _LAYER_IDX_REQUIRED_MSG = "{cls} requires `layer_idx` when `past_key_values` is provided."
 
@@ -28,7 +29,7 @@ class IndexFirstAxis(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, do):
-        (indices,) = ctx.saved_tensors
+        indices, = ctx.saved_tensor()
         assert do.ndim >= 2
         other_shape = do.shape[1:]
         do = rearrange(do, "b ... -> b (...)")
@@ -53,7 +54,7 @@ class IndexPutFirstAxis(torch.autograd.Function):
         ctx.save_for_backward(indices)
         assert indices.ndim == 1
         assert x.ndim >= 2
-        y = torch.zeros(first_axis_dim, *x.shape[1:], device=x.device, dtype=x.dtype)
+        y = torch.zeros([first_axis_dim, *x.shape[1:]], device=x.device, dtype=x.dtype)
         # TODO [2022-03-04] For some reason torch.scatter is a bit faster than indexing.
         y[indices] = x
         # y.scatter_(0, repeat(indices, 'z -> z d', d=x.shape[1]), x)
@@ -61,7 +62,7 @@ class IndexPutFirstAxis(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, do):
-        (indices,) = ctx.saved_tensors
+        indices, = ctx.saved_tensor()
         # TODO [2022-03-04] For some reason torch.gather is a bit faster than indexing.
         dx = do[indices]
         # dx = torch.gather(do, 0, repeat(indices, 'z -> z d', d=do.shape[1]))
@@ -93,7 +94,7 @@ def get_unpad_data(
     """
     lens = prepare_lens_from_mask(attention_mask)
     indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
-    max_seqlen_in_batch = lens.max().item()
+    max_seqlen_in_batch = lens._max().item()
     cu_seqlens = prepare_cu_seqlens_from_mask(attention_mask)
     return indices, cu_seqlens, max_seqlen_in_batch
 

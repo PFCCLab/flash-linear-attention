@@ -252,7 +252,7 @@ class L2NormFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, dy):
-        y, rstd = ctx.saved_tensors
+        y, rstd = ctx.saved_tensor()
         dx = l2norm_bwd(y, rstd, dy, ctx.eps)
         return dx, None, None
 

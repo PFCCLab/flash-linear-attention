@@ -20,7 +20,7 @@ def get_package_version():
 
 
 setup(
-    name='flash-linear-attention',
+    name='flash-linear-attention-paddle',
     version=get_package_version(),
     description='Fast Triton-based implementations of causal linear attention',
     long_description=long_description,
@@ -38,12 +38,14 @@ setup(
     ],
     python_requires='>=3.10',
     install_requires=[
-        'torch>=2.7.0',
-        'transformers',
+        "triton>=3.3",
+        "paddleformers",
         'einops',
     ],
     extras_require={
-        'conv1d': ['causal-conv1d>=1.4.0'],
+        "cpu": ["paddlepaddle"],
+        "gpu": ["paddlepaddle-gpu"],
+        # 'conv1d': ['causal-conv1d>=1.4.0'],
         'benchmark': ['matplotlib', 'datasets>=3.3.0'],
         'test': ['pytest'],
     },

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
-from transformers.utils import logging
 
 from fla.layers.utils import get_layer_cache, update_layer_cache
 from fla.modules.activations import ACT2FN
+
+from ..paddle_utils import *
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
@@ -30,11 +33,11 @@ with warnings.catch_warnings():
         mamba_inner_fn,
     ))
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
     from fla.models.utils import Cache
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class Mamba(nn.Module):
@@ -81,13 +84,9 @@ class Mamba(nn.Module):
         self.act = ACT2FN[hidden_act]
 
         self.layer_idx = layer_idx
-
-        # projection of the input hidden states
-        self.in_proj = nn.Linear(self.hidden_size, self.intermediate_size * 2, bias=use_bias)
-        # selective projection used to make dt, B and C input dependant
-        self.x_proj = nn.Linear(self.intermediate_size, self.time_step_rank + self.ssm_state_size * 2, bias=False)
-        # time step projection (discretization)
-        self.dt_proj = nn.Linear(self.time_step_rank, self.intermediate_size, bias=True)
+        self.in_proj = paddle.compat.nn.Linear(self.hidden_size, self.intermediate_size * 2, bias=use_bias)
+        self.x_proj = paddle.compat.nn.Linear(self.intermediate_size, self.time_step_rank + self.ssm_state_size * 2, bias=False)
+        self.dt_proj = paddle.compat.nn.Linear(self.time_step_rank, self.intermediate_size, bias=True)
 
         # S4D real initialization. These are not discretized!
         # The core is to load them, compute the discrete states, then write the updated state. Keeps the memory bounded
@@ -96,7 +95,7 @@ class Mamba(nn.Module):
 
         self.A_log = nn.Parameter(torch.log(A))
         self.D = nn.Parameter(torch.ones(self.intermediate_size))
-        self.out_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=use_bias)
+        self.out_proj = paddle.compat.nn.Linear(self.intermediate_size, self.hidden_size, bias=use_bias)
 
         if not is_fast_path_available:
             logger.warning_once(
@@ -136,7 +135,7 @@ class Mamba(nn.Module):
         seq_len = hidden_states.shape[-1]
         if seq_len >= self.conv_kernel_size:
             return hidden_states[..., -self.conv_kernel_size:].contiguous()
-        return nn.functional.pad(hidden_states, (self.conv_kernel_size - seq_len, 0)).contiguous()
+        return paddle.compat.nn.functional.pad(hidden_states, (self.conv_kernel_size - seq_len, 0)).contiguous()
 
     def cuda_kernels_forward(
         self,
@@ -228,7 +227,7 @@ class Mamba(nn.Module):
         # 3. State Space Model sequence transformation
         # 3.a. input varying initialization of time_step, B and C
         ssm_parameters = self.x_proj(hidden_states.transpose(1, 2))
-        time_step, B, C = torch.split(
+        time_step, B, C = paddle.compat.split(
             ssm_parameters, [self.time_step_rank, self.ssm_state_size, self.ssm_state_size], dim=-1,
         )
         discrete_time_step = self.dt_proj.weight @ time_step.transpose(1, 2)
@@ -327,7 +326,7 @@ class Mamba(nn.Module):
         # 3. State Space Model sequence transformation
         # 3.a. Selection:  [batch, seq_len, self.time_step_rank + self.ssm_state_size * 2]
         ssm_parameters = self.x_proj(hidden_states.transpose(1, 2))
-        time_step, B, C = torch.split(
+        time_step, B, C = paddle.compat.split(
             ssm_parameters, [self.time_step_rank, self.ssm_state_size, self.ssm_state_size], dim=-1,
         )
         # [batch, seq_len, intermediate_size]

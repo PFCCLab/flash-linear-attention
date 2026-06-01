@@ -1,5 +1,6 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
+import paddle
 import torch
 import triton
 import triton.language as tl
@@ -11,7 +12,7 @@ NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if IS_AMD else [2, 4, 8, 16, 32]
 
 
 def k_update_ref(k: torch.Tensor, a: torch.Tensor, ka: torch.Tensor) -> torch.Tensor:
-    return k.addcmul(k * (a - 1), ka)
+    return paddle.add(k, 1 * (k * (a - 1)) * ka)
 
 
 @triton.heuristics({'IS_VARLEN': lambda args: args['cu_seqlens'] is not None})
@@ -333,7 +334,7 @@ class KUpdateFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, grad_output):
-        k, a, ka = ctx.saved_tensors
+        k, a, ka = ctx.saved_tensor()
         dk, da, dka = k_update_bwd(
             grad_output, k, a, ka,
             ctx.cu_seqlens,

@@ -57,7 +57,7 @@ def naive_attn_decoding_kernel(
     b_q = tl.load(p_q, boundary_check=(0,))
     b_q = (b_q * scale).to(b_q.dtype)
 
-    b_o = tl.zeros([BV ], dtype=tl.float32)
+    b_o = tl.zeros([BV], dtype=tl.float32)
 
     b_m = tl.full([1], float('-inf'), dtype=tl.float32)
     b_acc = tl.zeros([1], dtype=tl.float32)

@@ -507,7 +507,7 @@ class ParallelNSACompressionFunction(torch.autograd.Function):
     @contiguous
     @autocast_custom_bwd
     def backward(ctx, do, *args):
-        q, k, v, o, lse = ctx.saved_tensors
+        q, k, v, o, lse = ctx.saved_tensor()
         dq, dk, dv = parallel_nsa_compression_bwd(
             q=q,
             k=k,

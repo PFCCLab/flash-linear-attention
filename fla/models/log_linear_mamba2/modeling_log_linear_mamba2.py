@@ -1,18 +1,18 @@
+import logging
 import math
 
+import paddle
+import paddleformers
 import torch
+from paddleformers.transformers.model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from torch import nn
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
-from transformers.utils.deprecation import deprecate_kwarg
 
 from fla.layers.log_linear_mamba2 import LogLinearMamba2
 from fla.models.log_linear_mamba2.configuration_log_linear_mamba2 import LogLinearMamba2Config
 from fla.models.utils import Cache, FLAGenerationMixin
 from fla.modules import FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss, GatedMLP, RMSNorm
-
-logger = logging.get_logger(__name__)
+from ...paddle_utils import *
+logger = logging.getLogger(name=__name__)
 
 
 class LogLinearMamba2Block(nn.Module):
@@ -84,7 +84,7 @@ class LogLinearMamba2Block(nn.Module):
         return hidden_states, attentions, past_key_values
 
 
-class LogLinearMamba2PreTrainedModel(PreTrainedModel, FLAGenerationMixin):
+class LogLinearMamba2PreTrainedModel(paddleformers.transformers.PretrainedModel, FLAGenerationMixin):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
@@ -141,7 +141,7 @@ class LogLinearMamba2PreTrainedModel(PreTrainedModel, FLAGenerationMixin):
                     )
             module.dt_bias._no_reinit = True
 
-        elif isinstance(module, (nn.Linear, nn.Conv1d)):
+        elif isinstance(module, (paddle.compat.nn.Linear, nn.Conv1d)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             nn.init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
@@ -300,7 +300,7 @@ class LogLinearMamba2Model(LogLinearMamba2PreTrainedModel):
                 if i is not None
             )
 
-        return BaseModelOutputWithPast(
+        return paddleformers.transformers.model_outputs.BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
             hidden_states=all_hidden_states,
@@ -314,7 +314,7 @@ class LogLinearMamba2ForCausalLM(LogLinearMamba2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.backbone = LogLinearMamba2Model(config)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = paddle.compat.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.criterion = None
 
         # Initialize weights and apply final processing
@@ -332,7 +332,6 @@ class LogLinearMamba2ForCausalLM(LogLinearMamba2PreTrainedModel):
     def set_input_embeddings(self, new_embeddings):
         return self.backbone.set_input_embeddings(new_embeddings)
 
-    @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
     def forward(
         self,
         input_ids: torch.LongTensor | None = None,
@@ -379,7 +378,7 @@ class LogLinearMamba2ForCausalLM(LogLinearMamba2PreTrainedModel):
                 elif self.config.fuse_cross_entropy:
                     criterion = FusedCrossEntropyLoss(inplace_backward=True)
                 else:
-                    criterion = nn.CrossEntropyLoss()
+                    criterion = paddle.nn.CrossEntropyLoss()
             else:
                 criterion = self.criterion
             labels = labels.to(hidden_states.device)
@@ -395,13 +394,13 @@ class LogLinearMamba2ForCausalLM(LogLinearMamba2PreTrainedModel):
                     hidden_states, labels, self.lm_head.weight, self.lm_head.bias,
                 )
             else:
-                loss = criterion(logits.view(labels.numel(), -1), labels.view(-1))
+                loss = criterion(logits.view(labels.size, -1), labels.view(-1))
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        return paddleformers.transformers.model_outputs.CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,

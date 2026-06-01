@@ -48,10 +48,6 @@ class IntraCardCPBackend(BaseBackend):
         use_exp2: bool = False,
         transpose_state_layout: bool = False,
     ) -> tuple[bool, str | None]:
-        """Check if intracard CP should handle this call."""
-        # Only in inference mode
-        if not torch.is_inference_mode_enabled():
-            return False, "Not in inference mode"
 
         # Only for varlen
         if cu_seqlens is None:

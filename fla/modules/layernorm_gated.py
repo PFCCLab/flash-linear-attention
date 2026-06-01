@@ -428,7 +428,7 @@ class LayerNormFn(torch.autograd.Function):
     @input_guard
     @staticmethod
     def backward(ctx, dy):
-        x, weight, bias, mean, rstd, z = ctx.saved_tensors
+        x, weight, bias, mean, rstd, z = ctx.saved_tensor()
         dy = dy.reshape(-1, dy.shape[-1])
         if dy.stride(-1) != 1:
             dy = dy.contiguous()
@@ -467,7 +467,7 @@ class LayerNormGated(nn.Module):
         eps: float = 1e-5,
         group_size: int | None = None,
         norm_before_gate: bool = True,
-        device: torch.device | None = None,
+        device = None, 
         dtype: torch.dtype | None = None,
     ):
         """If group_size is not None, we do GroupNorm with each group having group_size elements.
@@ -502,7 +502,7 @@ class RMSNormGated(nn.Module):
         eps: float = 1e-5,
         group_size: int | None = None,
         norm_before_gate: bool = False,
-        device: torch.device | None = None,
+        device=None,
         dtype: torch.dtype | None = None,
     ):
         """If group_size is not None, we do GroupNorm with each group having group_size elements.

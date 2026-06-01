@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+import paddle
+import paddleformers
 
 import torch
 import torch.nn as nn
 from einops import rearrange, repeat
-from transformers.activations import ACT2FN
 
 from fla.layers.utils import get_layer_cache, get_unpad_data, index_first_axis, pad_input, update_layer_cache
 from fla.modules import FusedRMSNormGated, RMSNorm, ShortConvolution
@@ -15,8 +16,10 @@ from fla.modules.rotary import RotaryEmbedding
 from fla.ops.retention import chunk_retention, fused_chunk_retention, fused_recurrent_retention, parallel_retention
 from fla.ops.utils.index import prepare_lens_from_mask
 
+from ..paddle_utils import *
+
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
     from fla.models.utils import Cache
 
@@ -91,7 +94,7 @@ class MultiScaleRetention(nn.Module):
         self.num_heads = num_heads
         self.num_kv_heads = num_kv_heads if num_kv_heads is not None else num_heads
         self.num_kv_groups = self.num_heads // self.num_kv_heads
-        self.feature_map_fn = ACT2FN[feature_map] if feature_map is not None else None
+        self.feature_map_fn = paddleformers.transformers.activations.ACT2FN[feature_map] if feature_map is not None else None
 
         self.use_short_conv = use_short_conv
         self.conv_size = conv_size
@@ -111,11 +114,11 @@ class MultiScaleRetention(nn.Module):
         self.head_k_dim = self.key_dim // num_heads
         self.head_v_dim = self.value_dim // num_heads
 
-        self.q_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, self.key_dim_per_group, bias=False)
-        self.v_proj = nn.Linear(hidden_size, self.value_dim_per_group, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim_per_group, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim_per_group, bias=False)
         if self.use_output_gate:
-            self.g_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
+            self.g_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
 
         if use_short_conv:
             self.conv_size = conv_size
@@ -138,7 +141,7 @@ class MultiScaleRetention(nn.Module):
                 activation='silu',
             )
 
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
 
         if gate_fn == 'swish' and fuse_norm and use_output_gate:
             self.g_norm_swish_gate = FusedRMSNormGated(
@@ -155,7 +158,7 @@ class MultiScaleRetention(nn.Module):
                 eps=norm_eps,
                 dtype=torch.float32
             )
-            self.gate_fn = ACT2FN[gate_fn]
+            self.gate_fn = paddleformers.transformers.activations.ACT2FN[gate_fn]
 
         # TODO: fix this issue
         # https://github.com/Dao-AILab/flash-attention/blob/main/flash_attn/ops/triton/rotary.py#L180
@@ -229,7 +232,7 @@ class MultiScaleRetention(nn.Module):
             if attention_mask is not None and seqlen_offset > 0:
                 # to deliminate the offsets of padding tokens
                 seqlen_offset = prepare_lens_from_mask(attention_mask) - q_len
-                max_seqlen = q.shape[1] + seqlen_offset.max().item()
+                max_seqlen = q.shape[1] + seqlen_offset._max().item()
 
         q, k = self.rotary(q, k, seqlen_offset=seqlen_offset, max_seqlen=max_seqlen, cu_seqlens=cu_seqlens)
 

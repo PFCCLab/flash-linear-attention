@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import math
 
+import paddle
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import triton
 import triton.language as tl
 
@@ -417,7 +416,7 @@ class LayerNormLinearQuantFn(torch.autograd.Function):
         dtype = torch.get_autocast_gpu_dtype() if torch.is_autocast_enabled() else y.dtype
         linear_weight = weight_quant(linear_weight).to(dtype)
         linear_bias = linear_bias.to(dtype) if linear_bias is not None else None
-        out = F.linear(y.to(linear_weight.dtype), linear_weight, linear_bias)
+        out = paddle.compat.nn.functional.linear(y.to(linear_weight.dtype), linear_weight, linear_bias)
         # We don't store y, will be recomputed in the backward pass to save memory
         ctx.save_for_backward(residual_out, norm_weight, norm_bias, linear_weight, mean, rstd)
         ctx.x_shape_og = x_shape_og
@@ -432,9 +431,9 @@ class LayerNormLinearQuantFn(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, dout, *args):
-        x, norm_weight, norm_bias, linear_weight, mean, rstd = ctx.saved_tensors
+        x, norm_weight, norm_bias, linear_weight, mean, rstd = (ctx.saved_tensor())
         dout = dout.reshape(-1, dout.shape[-1])
-        dy = F.linear(dout, linear_weight.t())
+        dy = paddle.compat.nn.functional.linear(dout, linear_weight.t())
         dlinear_bias = None if ctx.linear_bias_is_none else dout.sum(0)
         assert dy.shape == x.shape
         if ctx.prenorm:
@@ -549,7 +548,7 @@ def bit_linear(x, weight, bias=None, norm_weight=None, norm_bias=None, eps=1e-8)
     )
 
 
-class BitLinear(nn.Linear):
+class BitLinear(paddle.compat.nn.Linear):
     """
     A custom linear layer that applies quantization on both activations and weights.
     This is primarily for training; kernel optimization is needed for efficiency in deployment.
@@ -599,7 +598,7 @@ class BitLinear(nn.Linear):
         x_quant = x_norm + (activation_quant(x_norm) - x_norm).detach()
         w_quant = w + (weight_quant(w) - w).detach()
         # Perform linear operation with quantized values
-        y = F.linear(x_quant, w_quant)
+        y = paddle.compat.nn.functional.linear(x_quant, w_quant)
 
         return y
 

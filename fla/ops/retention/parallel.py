@@ -2,6 +2,7 @@
 
 import warnings
 
+import paddle
 import torch
 
 from fla.ops.simple_gla.parallel import parallel_simple_gla
@@ -54,7 +55,8 @@ def parallel_retention(
             "when head_first=False was specified. "
             "Please verify your input tensor format matches the expected shape [B, T, H, ...].",
         )
-    s = (1 - q.new_tensor(2., dtype=torch.float).pow(-5. - q.new_tensor(range(q.shape[2]), dtype=torch.float))).log()
+    s = (1 - paddle.to_tensor(data=2.0, dtype=torch.float).
+         pow(-5.0 - paddle.to_tensor(data=range(q.shape[2]), dtype=torch.float))).log()
     g = s[None, None, :].expand(q.shape[0], q.shape[1], q.shape[2])
 
     o, attn = parallel_simple_gla(
@@ -65,5 +67,5 @@ def parallel_retention(
         g=g,
         output_attentions=output_attentions,
         cu_seqlens=cu_seqlens,
-    )
+    )  
     return o, attn

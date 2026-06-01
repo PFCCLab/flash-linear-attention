@@ -332,7 +332,7 @@ class FusedRecurrentIPLRDeltaRuleFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, do, dht):
-        q, k, v, a, b, ha, initial_state = ctx.saved_tensors
+        q, k, v, a, b, ha, initial_state = ctx.saved_tensor()
         B, T, H, K, V = *q.shape, v.shape[-1]
         N = B if ctx.cu_seqlens is None else len(ctx.cu_seqlens) - 1
         BK, BV = triton.next_power_of_2(K), min(triton.next_power_of_2(V), 64)

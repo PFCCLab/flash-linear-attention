@@ -643,7 +643,7 @@ class ParallelSimpleGLAFunction(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, da=None):
-        q, k, v, g, cu_seqlens, chunk_indices = ctx.saved_tensors
+        q, k, v, g, cu_seqlens, chunk_indices = ctx.saved_tensor()
         dq, dk, dv, dg = parallel_simple_gla_bwd(
             q=q,
             k=k,

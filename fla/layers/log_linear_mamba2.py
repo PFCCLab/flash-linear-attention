@@ -1,23 +1,27 @@
 from __future__ import annotations
 
+import logging
 import math
+import os
 from typing import TYPE_CHECKING
 
+import paddle
+import paddleformers
 import torch
 import torch.nn as nn
 from einops import rearrange
-from transformers.activations import ACT2FN
-from transformers.utils import logging
 
 from fla.layers.mamba2 import apply_mask_to_padding_states, causal_conv1d_fn, causal_conv1d_update, is_fast_path_available
 from fla.layers.utils import get_layer_cache, update_layer_cache
 from fla.modules.layernorm_gated import RMSNormGated, rmsnorm_fn
 from fla.ops.log_linear_attn.chunk import LogLinearAttentionState, chunk_log_linear_attn
 
+from ..paddle_utils import *
+
 if TYPE_CHECKING:
     from fla.models.utils import Cache
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 def ceil_log(x: int, b: int) -> int:
@@ -190,7 +194,7 @@ def hmamba_split_conv1d_scan_combined(
 
     zxBCdtl_splits = [dim, dim + 2 * ngroups * dstate, nheads, nheads * dlambda]
     xBC_splits = [dim, ngroups * dstate, ngroups * dstate]
-    z, xBC, dt, dl = torch.split(zxbcdtdl, zxBCdtl_splits, dim=-1)
+    z, xBC, dt, dl = paddle.compat.split(zxbcdtdl, zxBCdtl_splits, dim=-1)
     _conv_fn = conv1d_fn if conv1d_fn is not None else causal_conv1d_fn
     _conv_out = _conv_fn(
         rearrange(xBC, "b s d -> b d s"),
@@ -202,7 +206,7 @@ def hmamba_split_conv1d_scan_combined(
     if conv_backend == 'triton':
         _conv_out = _conv_out[0]
     xBC = rearrange(_conv_out, "b d s -> b s d")
-    x, B, C = torch.split(xBC, xBC_splits, dim=-1)
+    x, B, C = paddle.compat.split(xBC, xBC_splits, dim=-1)
     x = rearrange(x, "b l (h p) -> b l h p", h=nheads, p=headdim)
     B = rearrange(B, "b l (g n) -> b l g n", g=ngroups, n=dstate)
     C = rearrange(C, "b l (g n) -> b l g n", g=ngroups, n=dstate)
@@ -237,7 +241,7 @@ def hmamba_split_conv1d_scan_combined(
             group_size=None,
             norm_before_gate=False,
         )
-    out = torch.nn.functional.linear(y, outproj_weight, outproj_bias)
+    out = paddle.compat.nn.functional.linear(y, outproj_weight, outproj_bias)
     return out
 
 
@@ -281,7 +285,7 @@ class LogLinearMamba2(nn.Module):
         self.layer_idx = layer_idx
         self.use_conv_bias = use_conv_bias
         self.activation = hidden_act
-        self.act = ACT2FN[hidden_act]
+        self.act = paddleformers.transformers.activations.ACT2FN[hidden_act]
 
         self.layer_norm_epsilon = norm_eps
         self.rms_norm = rms_norm
@@ -313,7 +317,7 @@ class LogLinearMamba2(nn.Module):
             + self.conv_dim
             + self.num_heads * (self.num_lambda_dims + 1)
         )
-        self.in_proj = nn.Linear(
+        self.in_proj = paddle.compat.nn.Linear(
             self.hidden_size,
             projection_size,
             bias=use_bias,
@@ -341,7 +345,7 @@ class LogLinearMamba2(nn.Module):
         self.D = nn.Parameter(torch.ones(self.num_heads))
         self.D._no_weight_decay = True
 
-        self.out_proj = nn.Linear(
+        self.out_proj = paddle.compat.nn.Linear(
             self.intermediate_size, self.hidden_size, bias=use_bias,
         )
         self.use_bias = use_bias
@@ -354,7 +358,6 @@ class LogLinearMamba2(nn.Module):
                 "To install follow https://github.com/state-spaces/mamba/#installation and"
                 "https://github.com/Dao-AILab/causal-conv1d",
             )
-        import os
         backend = os.environ.get('FLA_CONV_BACKEND', backend)
         assert backend in ['cuda', 'triton'], f"Unsupported backend: {backend}"
         if backend == 'cuda' and causal_conv1d_fn is None:
@@ -415,7 +418,7 @@ class LogLinearMamba2(nn.Module):
             if hidden_states.shape[1] != 1:
                 raise ValueError("LogLinearMamba2 cached decoding only supports a single new token per step.")
 
-            gate, xBC, dt, dl = torch.split(
+            gate, xBC, dt, dl = paddle.compat.split(
                 projected_states.squeeze(1),
                 [
                     self.intermediate_size,
@@ -436,7 +439,7 @@ class LogLinearMamba2(nn.Module):
                 self.activation,
             )
 
-            x, B, C = torch.split(
+            x, B, C = paddle.compat.split(
                 xBC,
                 [
                     self.intermediate_size,
@@ -517,7 +520,7 @@ class LogLinearMamba2(nn.Module):
 
             # 2-4. Fused kernel for conv1d, SSM, and the final projection
             if self.training and not use_cache:
-                out = torch.utils.checkpoint.checkpoint(
+                out = paddle.distributed.fleet.utils.recompute(
                     hmamba_split_conv1d_scan_combined,
                     use_reentrant=False,
                     # function arguments
@@ -546,7 +549,7 @@ class LogLinearMamba2(nn.Module):
                 return out, None, None
 
             else:
-                gate, xBC, dt, dl = torch.split(
+                gate, xBC, dt, dl = paddle.compat.split(
                     projected_states,
                     [
                         self.intermediate_size,
@@ -563,7 +566,7 @@ class LogLinearMamba2(nn.Module):
                 new_conv_state = None
                 if use_cache:
                     xBC_t = rearrange(masked_xBC, "b l d -> b d l")
-                    new_conv_state = torch.nn.functional.pad(
+                    new_conv_state = paddle.compat.nn.functional.pad(
                         xBC_t,
                         (self.conv_kernel_size - xBC_t.shape[-1], 0),
                     )
@@ -586,7 +589,7 @@ class LogLinearMamba2(nn.Module):
                     attention_mask=attention_mask,
                 )
 
-                x, B, C = torch.split(
+                x, B, C = paddle.compat.split(
                     xBC,
                     [
                         self.intermediate_size,

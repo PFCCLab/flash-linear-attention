@@ -1,10 +1,10 @@
 
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class DeltaNetConfig(PretrainedConfig):
+class DeltaNetConfig(paddleformers.transformers.PretrainedConfig):
 
     model_type = 'delta_net'
     keys_to_ignore_at_inference = ['past_key_values']

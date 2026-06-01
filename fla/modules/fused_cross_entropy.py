@@ -3,6 +3,7 @@
 
 from typing import Any
 
+import paddle
 import torch
 import torch.nn as nn
 import triton
@@ -11,12 +12,11 @@ import triton.language as tl
 from fla.ops.utils.op import exp, log
 from fla.utils import input_guard
 
-# `all_gather_into_tensor` and `reduce_scatter_tensor` are new placeholders for
-# `_all_gather_base` and `_reduce_scatter_base`. They require the most recent
-# version of PyTorch. The following 2 lines are for backward compatibility with
-# older PyTorch.
-if "all_gather_into_tensor" not in dir(torch.distributed):
-    torch.distributed.all_gather_into_tensor = torch.distributed._all_gather_base
+try:
+    if 'all_gather_into_tensor' not in dir(torch.distributed):
+        paddle.distributed.stream.all_gather = torch.distributed._all_gather_base
+except Exception:
+    paddle.distributed.stream.all_gather = None
 
 
 @triton.heuristics({
@@ -204,9 +204,9 @@ def fused_cross_entropy_forward(
             losses = losses.sum(dim=0)
         if world_size > 1:
             lse_allgather = torch.empty(world_size, n_rows, dtype=lse.dtype, device=lse.device)
-            torch.distributed.all_gather_into_tensor(lse_allgather, lse, group=process_group)
-            handle_losses = torch.distributed.all_reduce(
-                losses, op=torch.distributed.ReduceOp.SUM, group=process_group, async_op=True,
+            paddle.distributed.stream.all_gather(tensor_or_tensor_list=lse_allgather, tensor=lse, group=process_group)
+            handle_losses = paddle.distributed.all_reduce(
+                tensor=losses, op=torch.distributed.ReduceOp.SUM, group=process_group, sync_op=not True
             )
             lse = torch.logsumexp(lse_allgather, dim=0)
             handle_losses.wait()
@@ -268,7 +268,7 @@ class CrossEntropyLossFunction(torch.autograd.Function):
     def backward(ctx, grad_losses, grad_z_losses):
         del grad_z_losses  # z_losses are only for logging.
 
-        logits, lse, target = ctx.saved_tensors
+        logits, lse, target = ctx.saved_tensor()
         dlogits = logits if ctx.inplace_backward else torch.empty_like(logits)
         n_rows, n_cols = logits.shape
         BLOCK_SIZE = min(triton.next_power_of_2(n_cols), 4 * 1024)

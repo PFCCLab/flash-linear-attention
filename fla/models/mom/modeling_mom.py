@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+import paddle
+import paddleformers
 import torch
 import torch.nn as nn
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
+from paddleformers.transformers.model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 
 from fla.layers import MomAttention
 from fla.layers.attn import Attention
@@ -18,8 +19,10 @@ from fla.models.utils import Cache, FLAGenerationMixin
 from fla.modules import FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss, RMSNorm
 from fla.modules import GatedMLP as MomMLP
 
+from ...paddle_utils import *
+
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
 
 try:
@@ -27,7 +30,7 @@ try:
 except ImportError:
     from fla.models.modeling_layers import GradientCheckpointingLayer
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 def load_balancing_loss_func(
@@ -66,7 +69,7 @@ def load_balancing_loss_func(
         compute_device = gate_logits[0].device
         concatenated_gate_logits = torch.cat([layer_gate.to(compute_device) for layer_gate in gate_logits], dim=0)
 
-    routing_weights = torch.nn.functional.softmax(concatenated_gate_logits, dim=-1)
+    routing_weights = paddle.compat.nn.functional.softmax(concatenated_gate_logits, dim=-1)
 
     _, selected_experts = torch.topk(routing_weights, top_k, dim=-1)
 
@@ -191,7 +194,7 @@ class MomBlock(GradientCheckpointingLayer):
         return outputs
 
 
-class MomPreTrainedModel(PreTrainedModel):
+class MomPreTrainedModel(paddleformers.transformers.PretrainedModel):
 
     config_class = MomConfig
     supports_gradient_checkpointing = True
@@ -206,7 +209,7 @@ class MomPreTrainedModel(PreTrainedModel):
         rescale_prenorm_residual: bool = False,
         num_residuals_per_layer: int = 2,
     ):
-        if isinstance(module, (nn.Linear, nn.Conv1d)):
+        if isinstance(module, (paddle.compat.nn.Linear, nn.Conv1d)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             nn.init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
@@ -237,7 +240,7 @@ class MomPreTrainedModel(PreTrainedModel):
 
 
 @dataclass
-class MomOutputWithPast(BaseModelOutputWithPast):
+class MomOutputWithPast(paddleformers.transformers.model_outputs.BaseModelOutputWithPast):
     router_logits: tuple[torch.FloatTensor, ...] | None = None
 
 
@@ -334,7 +337,7 @@ class MomModel(MomPreTrainedModel):
 
 
 @dataclass
-class MomCausalLMOutputWithPast(CausalLMOutputWithPast):
+class MomCausalLMOutputWithPast(paddleformers.transformers.model_outputs.CausalLMOutputWithPast):
     aux_loss: torch.FloatTensor | None = None
     router_logits: tuple[torch.FloatTensor, ...] | None = None
 
@@ -347,7 +350,7 @@ class MomForCausalLM(MomPreTrainedModel, FLAGenerationMixin):
         super().__init__(config)
         self.model = MomModel(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = paddle.compat.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.num_memories = config.num_memories
         self.topk = config.topk
         self.aux_loss_scale = config.aux_loss_scale
@@ -433,7 +436,7 @@ class MomForCausalLM(MomPreTrainedModel, FLAGenerationMixin):
                 else:
                     loss_fct = FusedCrossEntropyLoss(inplace_backward=True)
             else:
-                loss_fct = nn.CrossEntropyLoss()
+                loss_fct = paddle.nn.CrossEntropyLoss()
             # Enable model parallelism
             labels = labels.to(hidden_states.device)
             labels = torch.cat((labels[..., 1:], torch.full_like(labels[:, :1], loss_fct.ignore_index)), 1)

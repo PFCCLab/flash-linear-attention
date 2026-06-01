@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +18,7 @@ from fla.modules.fused_norm_gate import rms_norm_swish_gate_linear
 from fla.ops.gla import chunk_gla, fused_recurrent_gla
 
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
     from fla.models.utils import Cache
 
@@ -68,9 +69,9 @@ class LightNetAttention(nn.Module):
         self.head_f_dim = self.expand_ratio
         self.head_i_dim = self.hidden_size // num_heads
 
-        self.q_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
 
         if use_short_conv:
             self.conv_size = conv_size
@@ -94,15 +95,15 @@ class LightNetAttention(nn.Module):
             )
 
         self.g_proj = nn.Sequential(
-            nn.Linear(hidden_size, gate_low_rank_dim, bias=False),
-            nn.Linear(gate_low_rank_dim, hidden_size, bias=False),
+            paddle.compat.nn.Linear(hidden_size, gate_low_rank_dim, bias=False),
+            paddle.compat.nn.Linear(gate_low_rank_dim, hidden_size, bias=False),
         )
         self.g_norm = FusedRMSNormGated(
             hidden_size=hidden_size,
             elementwise_affine=elementwise_affine,
             eps=norm_eps,
         )
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
 
     def forward(
         self,
@@ -167,8 +168,7 @@ class LightNetAttention(nn.Module):
         # TODO: this 2 steps took huge amount of time, which should be optimized
         last_z = last_state['ffn_state'] if last_state is not None and last_state.get('ffn_state') is not None else None
         if last_z is not None:
-            # Decode path: continue logcumsumexp from cached state
-            z = torch.logaddexp(last_z, k.float())
+            z = paddle.logaddexp(x=last_z, y=k.float())
             k, g = torch.exp(k - z).to(k.dtype), (last_z - z).to(k.dtype)
         else:
             # Prefill path: mask padding positions to -inf so they don't affect logcumsumexp
@@ -183,9 +183,8 @@ class LightNetAttention(nn.Module):
             z = k_for_z.logcumsumexp(1)
             k_new = torch.exp(k_float - z)
             g_new = torch.cat((z[:, :1], z[:, :-1]), 1) - z
-            # NaN/inf arise at fully-masked positions (-inf - (-inf)), zero them out
-            k = torch.nan_to_num(k_new, nan=0.0, posinf=0.0).to(k.dtype)
-            g = torch.nan_to_num(g_new, nan=0.0, posinf=0.0, neginf=0.0).to(k.dtype)
+            k = paddle.nan_to_num(x=k_new, nan=0.0, posinf=0.0).to(k.dtype)
+            g = paddle.nan_to_num(x=g_new, nan=0.0, posinf=0.0, neginf=0.0).to(k.dtype)
 
         recurrent_state = last_state['recurrent_state'] if last_state is not None else None
         if mode == 'fused_recurrent':

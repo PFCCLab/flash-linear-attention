@@ -259,7 +259,7 @@ class ChunkOJAFunction(torch.autograd.Function):
         do: torch.Tensor,
         dht: torch.Tensor
     ):
-        q, q_rstd, k, k_rstd, v, gv, beta, A, o, initial_state, cu_seqlens, chunk_indices = ctx.saved_tensors
+        q, q_rstd, k, k_rstd, v, gv, beta, A, o, initial_state, cu_seqlens, chunk_indices = ctx.saved_tensor()
         dq, dk, dv, db, dg, dh0 = chunk_oja_bwd(
             q=q,
             k=k,
@@ -283,7 +283,6 @@ class ChunkOJAFunction(torch.autograd.Function):
         return dq.to(q), dk.to(k), dv.to(v), dg.to(gv), db.to(beta), None, dh0, None, None, None, None, None
 
 
-@torch.compiler.disable
 def chunk_gated_oja_rule(
     q: torch.Tensor,
     k: torch.Tensor,

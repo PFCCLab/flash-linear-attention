@@ -1,13 +1,14 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
-
 from __future__ import annotations
+
+import logging
 
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 from einops import rearrange
-from transformers.utils import logging
 
 from fla.modules import RotaryEmbedding
 from fla.ops.nsa.parallel import parallel_nsa
@@ -16,7 +17,7 @@ from fla.ops.utils.index import prepare_lens_from_mask
 if TYPE_CHECKING:
     from fla.models.utils import Cache
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class NativeSparseAttention(nn.Module):
@@ -55,11 +56,11 @@ class NativeSparseAttention(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.layer_idx = layer_idx
 
-        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=self.qkv_bias)
-        self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-        self.v_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-        self.g_proj = nn.Linear(self.hidden_size, self.num_heads * 3, bias=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=self.qkv_bias)
+        self.k_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
+        self.v_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
+        self.g_proj = paddle.compat.nn.Linear(self.hidden_size, self.num_heads * 3, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
         self.rotary = RotaryEmbedding(dim=self.head_dim, base=self.rope_theta)
 

@@ -401,7 +401,7 @@ class FusedRecurrentGSAFunction(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dhkt=None, dhvt=None):
-        q, k, v, s, g, qv, hk0, hv0, ok = ctx.saved_tensors
+        q, k, v, s, g, qv, hk0, hv0, ok = ctx.saved_tensor()
         scale = ctx.scale
         reverse = ctx.reverse
         cu_seqlens = ctx.cu_seqlens

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class DeltaFormerConfig(PretrainedConfig):
+class DeltaFormerConfig(paddleformers.transformers.PretrainedConfig):
     model_type = 'deltaformer'
     keys_to_ignore_at_inference = ['past_key_values']
 

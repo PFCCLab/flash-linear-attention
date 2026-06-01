@@ -413,7 +413,7 @@ class FusedRecurrentFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, do, dht):
-        q, q_rstd, k, k_rstd, v, beta, initial_state = ctx.saved_tensors
+        q, q_rstd, k, k_rstd, v, beta, initial_state = ctx.saved_tensor()
         dq, dk, dv, db, dh0 = fused_recurrent_delta_rule_bwd(
             q=q,
             k=k,
@@ -431,7 +431,6 @@ class FusedRecurrentFunction(torch.autograd.Function):
         return dq.to(q), dk.to(k), dv.to(v), db.to(beta), None, dh0, None, None, None
 
 
-@torch.compiler.disable
 def fused_recurrent_delta_rule(
     q: torch.Tensor,
     k: torch.Tensor,

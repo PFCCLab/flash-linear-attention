@@ -6,6 +6,7 @@ import math
 import warnings
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 from einops import rearrange, repeat
@@ -21,12 +22,10 @@ if TYPE_CHECKING:
     from fla.models.utils import Cache
 
 
-@torch.compile
 def elu_p1(x):
-    return (F.elu(x, 1., False) + 1.).to(x)
+    return (paddle.nn.functional.elu(x=x, alpha=1.0) + 1.0).to(x)
 
 
-@torch.compile
 def sum_norm(x):
     return (x / x.sum(-1, keepdim=True)).to(x)
 
@@ -142,11 +141,11 @@ class GatedDeltaNet(nn.Module):
             )
         assert mode in ['chunk', 'fused_recurrent'], f"Not supported mode `{mode}`."
 
-        self.q_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
-        self.a_proj = nn.Linear(hidden_size, self.num_v_heads, bias=False)
-        self.b_proj = nn.Linear(hidden_size, self.num_v_heads, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
+        self.a_proj = paddle.compat.nn.Linear(hidden_size, self.num_v_heads, bias=False)
+        self.b_proj = paddle.compat.nn.Linear(hidden_size, self.num_v_heads, bias=False)
 
         A = torch.empty(self.num_v_heads, dtype=torch.float32).uniform_(0, 16)
         self.A_log = nn.Parameter(torch.log(A))
@@ -193,11 +192,11 @@ class GatedDeltaNet(nn.Module):
                 "Do not turn it off, i.e., setting `use_short_conv=False` unless you know what you are doing.",
             )
         if use_gate:
-            self.g_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
+            self.g_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
             self.o_norm = FusedRMSNormGated(self.head_v_dim, eps=norm_eps)
         else:
             self.o_norm = RMSNorm(self.head_v_dim, eps=norm_eps, dtype=torch.float32)
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
 
     def forward(
         self,

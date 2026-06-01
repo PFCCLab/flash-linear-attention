@@ -1,15 +1,16 @@
 from __future__ import annotations
+import logging
 
 import math
 import warnings
 from typing import TYPE_CHECKING, Optional
 
+import paddle
+import paddleformers
 import torch
 import torch.nn as nn
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
-from transformers.utils.deprecation import deprecate_kwarg
+
+from paddleformers.transformers.model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 
 from fla.layers.attn import Attention
 from fla.layers.lightnet import LightNetAttention
@@ -19,19 +20,21 @@ from fla.modules import FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss, RMSN
 from fla.modules import GatedMLP as LightNetMLP
 from fla.modules.l2warp import l2_warp
 
+from ...paddle_utils import *
+
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
 
 try:
     from transformers.modeling_layers import GradientCheckpointingLayer
 except ImportError:
     from fla.models.modeling_layers import GradientCheckpointingLayer
-
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class LightNetBlock(GradientCheckpointingLayer):
+
 
     def __init__(self, config: LightNetConfig, layer_idx: int):
         super().__init__()
@@ -105,7 +108,7 @@ class LightNetBlock(GradientCheckpointingLayer):
         return outputs
 
 
-class LightNetPreTrainedModel(PreTrainedModel):
+class LightNetPreTrainedModel(paddleformers.transformers.PretrainedModel):
 
     config_class = LightNetConfig
     supports_gradient_checkpointing = True
@@ -121,7 +124,7 @@ class LightNetPreTrainedModel(PreTrainedModel):
         prenorm_residual_strategy: str | None = None,
         num_residuals_per_layer: int = 2,
     ):
-        if isinstance(module, (nn.Linear, nn.Conv1d)):
+        if isinstance(module, (paddle.compat.nn.Linear, nn.Conv1d)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             nn.init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
@@ -240,7 +243,7 @@ class LightNetModel(LightNetPreTrainedModel):
 
         if not return_dict:
             return tuple(i for i in [hidden_states, past_key_values, all_hidden_states, all_attns] if i is not None)
-        return BaseModelOutputWithPast(
+        return paddleformers.transformers.model_outputs.BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
             hidden_states=all_hidden_states,
@@ -256,7 +259,7 @@ class LightNetForCausalLM(LightNetPreTrainedModel, FLAGenerationMixin):
         super().__init__(config)
         self.model = LightNetModel(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = paddle.compat.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.criterion = None
 
         # Initialize weights and apply final processing
@@ -295,7 +298,6 @@ class LightNetForCausalLM(LightNetPreTrainedModel, FLAGenerationMixin):
             else:
                 raise exception
 
-    @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -340,7 +342,7 @@ class LightNetForCausalLM(LightNetPreTrainedModel, FLAGenerationMixin):
                 elif self.config.fuse_cross_entropy:
                     criterion = FusedCrossEntropyLoss(inplace_backward=True)
                 else:
-                    criterion = nn.CrossEntropyLoss()
+                    criterion = paddle.nn.CrossEntropyLoss()
             else:
                 criterion = self.criterion
             labels = labels.to(hidden_states.device)
@@ -348,14 +350,14 @@ class LightNetForCausalLM(LightNetPreTrainedModel, FLAGenerationMixin):
             if self.config.fuse_linear_cross_entropy:
                 loss = criterion(hidden_states, labels, self.lm_head.weight, self.lm_head.bias)
             else:
-                loss = criterion(logits.view(labels.numel(), -1), labels.view(-1))
+                loss = criterion(logits.view(labels.size, -1), labels.view(-1))
                 loss = l2_warp(loss, logits) if self.config.use_l2warp else loss
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        return paddleformers.transformers.model_outputs.CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,

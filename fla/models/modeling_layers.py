@@ -1,10 +1,10 @@
 
+import logging
 from functools import partial
 
 from torch import nn
-from transformers.utils import logging
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class GradientCheckpointingLayer(nn.Module):

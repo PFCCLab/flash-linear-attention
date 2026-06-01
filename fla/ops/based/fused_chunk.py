@@ -321,7 +321,7 @@ class FusedChunkBasedFunction(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dz):
-        q, k, v = ctx.saved_tensors
+        q, k, v = ctx.saved_tensor()
         B, H, T, K, V = *k.shape, v.shape[-1]
         scale = ctx.scale
 

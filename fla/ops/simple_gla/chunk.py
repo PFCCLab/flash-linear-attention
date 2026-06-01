@@ -175,7 +175,7 @@ class ChunkSimpleGLAFunction(torch.autograd.Function):
     @autocast_custom_bwd
     def backward(ctx, do, dht):
         chunk_size, scale, cu_seqlens = ctx.chunk_size, ctx.scale, ctx.cu_seqlens
-        q, k, v, g, g_gamma, initial_state, chunk_indices = ctx.saved_tensors
+        q, k, v, g, g_gamma, initial_state, chunk_indices = ctx.saved_tensor()
         dq, dk, dv, dg, dh0 = chunk_simple_gla_bwd(
             q=q,
             k=k,
@@ -198,7 +198,6 @@ class ChunkSimpleGLAFunction(torch.autograd.Function):
         return dq.to(q), dk.to(k), dv.to(v), dg, None, None, dh0, None, None, None
 
 
-@torch.compiler.disable
 def chunk_simple_gla(
     q: torch.Tensor,
     k: torch.Tensor,

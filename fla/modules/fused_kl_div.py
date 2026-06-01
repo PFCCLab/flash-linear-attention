@@ -1,8 +1,8 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
+import paddle
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import triton
 import triton.language as tl
 
@@ -146,10 +146,8 @@ def fused_kl_div_forward(
         # [C, N]
         c_sx = x[start:end]
         c_tx = target_x[start:end]
-        # when doing matmul, use the original precision
-        # [C, V]
-        c_sl = F.linear(c_sx, weight)
-        c_tl = F.linear(c_tx, target_weight)
+        c_sl = paddle.compat.nn.functional.linear(c_sx, weight)
+        c_tl = paddle.compat.nn.functional.linear(c_tx, target_weight)
 
         # unreduced loss
         c_loss = loss[start:end]
@@ -243,7 +241,7 @@ class FusedKLDivLossFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, do):
-        dx, dw = ctx.saved_tensors
+        dx, dw = ctx.saved_tensor()
         dx, dw = fused_kl_div_backward(do, dx, dw)
         return dx, None, dw, None, None
 

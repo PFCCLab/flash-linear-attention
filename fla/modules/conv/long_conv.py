@@ -1,5 +1,6 @@
 import math
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -89,7 +90,7 @@ class PositionalEmbedding(nn.Module):
 
         f = torch.linspace(1e-4, bands - 1, bands)[None, None]
         z = torch.exp(-1j * f * w)
-        z = torch.cat([t, z.real, z.imag], dim=-1)
+        z = torch.cat([t, z.real(), z.imag()], dim=-1)
         self.z = nn.Parameter(z, requires_grad=False)
 
     def forward(self, L):
@@ -139,11 +140,10 @@ class ImplicitLongConvolution(nn.Module):
         ), "d_emb must be odd and greater or equal to 3 (time, sine and cosine)"
         self.pos_emb = PositionalEmbedding(d_emb, max_len)
 
-        # final linear layer
         self.mlp = nn.Sequential(
-            nn.Linear(d_emb, d_hidden),
+            paddle.compat.nn.Linear(d_emb, d_hidden),
             torch.nn.ReLU(),
-            nn.Linear(d_hidden, hidden_size),
+            paddle.compat.nn.Linear(d_hidden, hidden_size),
         )
 
     def filter(self, seq_len: int, *args, **kwargs):

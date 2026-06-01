@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +18,7 @@ from fla.modules.layernorm import rms_norm_linear
 from fla.ops.gsa import chunk_gsa, fused_recurrent_gsa
 
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
     from fla.models.utils import Cache
 
@@ -95,10 +96,10 @@ class GatedSlotAttention(nn.Module):
         else:
             raise NotImplementedError(f"Feature map `{feature_map}` is not supported now.")
 
-        self.q_proj = nn.Linear(self.hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.key_dim_per_group, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.value_dim_per_group, bias=False)
-        self.f_proj = nn.Linear(self.hidden_size, self.num_kv_heads * self.num_slots, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(self.hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(self.hidden_size, self.key_dim_per_group, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(self.hidden_size, self.value_dim_per_group, bias=False)
+        self.f_proj = paddle.compat.nn.Linear(self.hidden_size, self.num_kv_heads * self.num_slots, bias=False)
 
         if use_short_conv:
             self.conv_size = conv_size
@@ -122,7 +123,7 @@ class GatedSlotAttention(nn.Module):
             )
 
         self.g_norm = RMSNorm(self.hidden_size, elementwise_affine, eps=norm_eps, dtype=torch.float32)
-        self.o_proj = nn.Linear(self.value_dim, self.hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, self.hidden_size, bias=False)
 
     def forward(
         self,

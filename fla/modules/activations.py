@@ -1,5 +1,5 @@
 # Copyright (c) 2023-2025, Tri Dao, Yu Zhang, Songlin Yang.
-
+import paddle
 import torch
 import torch.nn.functional as F
 import triton
@@ -132,10 +132,9 @@ def sigmoid_bwd_kernel(
     tl.store(dx + dx_off, dx_val.to(dx.dtype.element_ty), mask=mask)
 
 
-@torch.compiler.disable
 def sigmoid_fwd(x: torch.Tensor, output_contiguous: bool = False) -> torch.Tensor:
     x = _ensure_inner_contiguous(x)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     y = _alloc_output(x, output_contiguous)
     sigmoid_fwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x, y, T=T, D=D,
@@ -145,11 +144,10 @@ def sigmoid_fwd(x: torch.Tensor, output_contiguous: bool = False) -> torch.Tenso
     return y
 
 
-@torch.compiler.disable
 def sigmoid_bwd(x: torch.Tensor, dy: torch.Tensor, output_contiguous: bool = False) -> torch.Tensor:
     x = _ensure_inner_contiguous(x)
     dy = _ensure_inner_contiguous(dy)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     dx = _alloc_output(x, output_contiguous)
     sigmoid_bwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x, dy, dx, T=T, D=D,
@@ -171,7 +169,7 @@ class SigmoidFunction(torch.autograd.Function):
     @staticmethod
     @input_guard(no_guard_contiguous=True)
     def backward(ctx, dout):
-        x, = ctx.saved_tensors
+        x, = ctx.saved_tensor()
         return sigmoid_bwd(x, dout)
 
 
@@ -250,10 +248,9 @@ def logsigmoid_bwd_kernel(
     tl.store(dx + dx_off, b_dx.to(dx.dtype.element_ty), mask=m_i)
 
 
-@torch.compiler.disable
 def logsigmoid_fwd(x: torch.Tensor, temperature: float = 1., output_contiguous: bool = False) -> torch.Tensor:
     x = _ensure_inner_contiguous(x)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     y = _alloc_output(x, output_contiguous)
     logsigmoid_fwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x=x,
@@ -267,11 +264,10 @@ def logsigmoid_fwd(x: torch.Tensor, temperature: float = 1., output_contiguous: 
     return y
 
 
-@torch.compiler.disable
 def logsigmoid_bwd(x: torch.Tensor, dy: torch.Tensor, temperature: float = 1., output_contiguous: bool = False) -> torch.Tensor:
     x = _ensure_inner_contiguous(x)
     dy = _ensure_inner_contiguous(dy)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     dx = _alloc_output(x, output_contiguous)
     logsigmoid_bwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x=x,
@@ -299,7 +295,7 @@ class LogSigmoidFunction(torch.autograd.Function):
     @staticmethod
     @input_guard(no_guard_contiguous=True)
     def backward(ctx, dy):
-        x, = ctx.saved_tensors
+        x, = ctx.saved_tensor()
         return logsigmoid_bwd(x, dy, ctx.temperature), None
 
 
@@ -372,10 +368,9 @@ def swish_bwd_kernel(
     tl.store(dx + dx_off, dx_val.to(dx.dtype.element_ty), mask=mask)
 
 
-@torch.compiler.disable
 def swish_fwd(x: torch.Tensor, output_contiguous: bool = False) -> torch.Tensor:
     x = _ensure_inner_contiguous(x)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     y = _alloc_output(x, output_contiguous)
     swish_fwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x, y, T=T, D=D,
@@ -385,11 +380,10 @@ def swish_fwd(x: torch.Tensor, output_contiguous: bool = False) -> torch.Tensor:
     return y
 
 
-@torch.compiler.disable
 def swish_bwd(x: torch.Tensor, dy: torch.Tensor, output_contiguous: bool = False) -> torch.Tensor:
     x = _ensure_inner_contiguous(x)
     dy = _ensure_inner_contiguous(dy)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     dx = _alloc_output(x, output_contiguous)
     swish_bwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x, dy, dx, T=T, D=D,
@@ -411,7 +405,7 @@ class SwishFunction(torch.autograd.Function):
     @staticmethod
     @input_guard(no_guard_contiguous=True)
     def backward(ctx, dout):
-        x, = ctx.saved_tensors
+        x, = ctx.saved_tensor()
         return swish_bwd(x, dout)
 
 
@@ -422,19 +416,12 @@ swish = SwishFunction.apply
 # sqrt(2/pi)  -> 0.79788456
 
 
-# this function is tanh approximation of gelu
-# actual gelu is:
-# x * 0.5 * (1.0 + torch.erf(x * 0.70710678))
-@torch.compile
+
 def bias_gelu(y, bias):
     x = bias + y
     return (x * 0.5 * (1.0 + torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x)))).to(dtype=y.dtype)
 
 
-# gradient of tanh approximation of gelu
-# gradient of actual gelu is:
-# 0.5 * (1. + torch.erf(x * 0.70710678)) + 0.3989423 * x * torch.exp(-0.5 * x * x)
-@torch.compile
 def bias_gelu_bwd(g, y, bias):
     """Assume that y has shape (B, D=D) and bias has shape (D)"""
     x = bias + y
@@ -457,7 +444,7 @@ class GeLUFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, bias = ctx.saved_tensors
+        input, bias = ctx.saved_tensor()
         tmp = bias_gelu_bwd(grad_output, input, bias)
         return tmp, tmp
 
@@ -465,18 +452,10 @@ class GeLUFunction(torch.autograd.Function):
 bias_gelu_impl = GeLUFunction.apply
 
 
-# this function is tanh approximation of gelu
-# actual gelu is:
-# x * 0.5 * (1.0 + torch.erf(x * 0.70710678))
-@torch.compile
 def gelu_fwd(x):
     return (x * 0.5 * (1.0 + torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x)))).to(dtype=x.dtype)
 
 
-# gradient of tanh approximation of gelu
-# gradient of actual gelu is:
-# 0.5 * (1. + torch.erf(x * 0.70710678)) + 0.3989423 * x * torch.exp(-0.5 * x * x)
-@torch.compile
 def gelu_bwd(g, x):
     tanh_out = torch.tanh(0.79788456 * x * (1 + 0.044715 * x * x))
     # sqrt(2/pi) * 3 * 0.044715 -> 0.1070322243
@@ -495,7 +474,7 @@ class FastGeLUFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        (input,) = ctx.saved_tensors
+        input, = ctx.saved_tensor()
         tmp = gelu_bwd(grad_output, input)
         return tmp
 
@@ -503,18 +482,15 @@ class FastGeLUFunction(torch.autograd.Function):
 fast_gelu_impl = FastGeLUFunction.apply
 
 
-@torch.compile
 def relu_bwd(g, x):
     return torch.where(x >= 0, g, 0.0).to(dtype=x.dtype)
 
 
-@torch.compile
 def sqrelu_fwd(x):
     r = F.relu(x.float())
     return (r * r).to(dtype=x.dtype)
 
 
-@torch.compile
 def sqrelu_bwd(g, x):
     return (2.0 * g * F.relu(x.float())).to(dtype=x.dtype)
 
@@ -528,7 +504,7 @@ class SquaredReLUFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, = ctx.saved_tensors
+        input, = ctx.saved_tensor()
         return sqrelu_bwd(grad_output, input)
 
 
@@ -622,12 +598,11 @@ def swiglu_fwdbwd_kernel(
         tl.store(z + z_off, z_val.to(z.dtype.element_ty), mask=mask)
 
 
-@torch.compiler.disable
 def swiglu_fwd(x: torch.Tensor, y: torch.Tensor, output_contiguous: bool = False) -> torch.Tensor:
     assert x.shape == y.shape, f"swiglu_fwd: shape mismatch x={x.shape} y={y.shape}"
     x = _ensure_inner_contiguous(x)
     y = _ensure_inner_contiguous(y)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     z = _alloc_output(x, output_contiguous)
     swiglu_fwd_kernel[lambda meta: (triton.cdiv(T, meta['B']),)](
         x, y, z, T=T, D=D,
@@ -638,7 +613,6 @@ def swiglu_fwd(x: torch.Tensor, y: torch.Tensor, output_contiguous: bool = False
     return z
 
 
-@torch.compiler.disable
 def swiglu_fwdbwd(
     x: torch.Tensor,
     y: torch.Tensor,
@@ -650,7 +624,7 @@ def swiglu_fwdbwd(
     x = _ensure_inner_contiguous(x)
     y = _ensure_inner_contiguous(y)
     g = _ensure_inner_contiguous(g)
-    T, D = x.numel(), x.shape[-1]
+    T, D = x.size, x.shape[-1]
     dx = _alloc_output(x, output_contiguous)
     dy = _alloc_output(y, output_contiguous)
     if use_weight:
@@ -688,7 +662,7 @@ class SwiGLUFunction(torch.autograd.Function):
     @staticmethod
     @input_guard(no_guard_contiguous=True)
     def backward(ctx, dout):
-        x, y = ctx.saved_tensors
+        x, y = ctx.saved_tensor()
         return swiglu_fwdbwd(x, y, dout)
 
 
@@ -707,7 +681,7 @@ class SwiGLULinearFunction(torch.autograd.Function):
     @autocast_custom_fwd
     def forward(ctx, x, y, weight, bias):
         z = swiglu_fwd(x, y, output_contiguous=True)
-        out = F.linear(z, weight, bias)
+        out = paddle.compat.nn.functional.linear(z, weight, bias)
         ctx.save_for_backward(x, y, weight)
         ctx.linear_bias_is_none = bias is None
         return out
@@ -716,9 +690,9 @@ class SwiGLULinearFunction(torch.autograd.Function):
     @input_guard(no_guard_contiguous=True)
     @autocast_custom_bwd
     def backward(ctx, dout, *args):
-        x, y, weight = ctx.saved_tensors
+        x, y, weight = ctx.saved_tensor()
         dout = dout.reshape(-1, dout.shape[-1])
-        dz = F.linear(dout, weight.t()).view_as(x)
+        dz = paddle.compat.nn.functional.linear(dout, weight.t()).view_as(x)
         dx, dy, z = swiglu_fwdbwd(x, y, dz, use_weight=True, output_contiguous=True)
         dlinear_weight = torch.einsum("bo,bi->oi", dout, z.reshape(-1, z.shape[-1]))
         dlinear_bias = None if ctx.linear_bias_is_none else dout.sum(0)

@@ -1,15 +1,15 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
-
 from __future__ import annotations
+
+import logging
 
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.utils.checkpoint
 from einops import rearrange
-from transformers.utils import logging
 
 from fla.layers.utils import pad_input, unpad_input
 from fla.modules import GroupNorm
@@ -19,7 +19,7 @@ from fla.ops.forgetting_attn.parallel import parallel_forgetting_attn
 if TYPE_CHECKING:
     from fla.models.utils import Cache
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class ForgettingAttention(nn.Module):
@@ -53,14 +53,14 @@ class ForgettingAttention(nn.Module):
         self.use_output_gate = use_output_gate
         self.layer_idx = layer_idx
 
-        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
-        self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-        self.v_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
-        self.f_proj = nn.Linear(self.hidden_size, self.num_heads, bias=True)
+        self.q_proj = paddle.compat.nn.Linear(self.hidden_size, self.hidden_size, bias=self.qkv_bias)
+        self.k_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
+        self.v_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=self.qkv_bias)
+        self.f_proj = paddle.compat.nn.Linear(self.hidden_size, self.num_heads, bias=True)
 
         if use_output_gate:
-            self.g_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+            self.g_proj = paddle.compat.nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
         if qk_norm:
             self.q_norm = GroupNorm(

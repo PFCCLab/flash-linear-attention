@@ -1,15 +1,15 @@
 from __future__ import annotations
+import logging
 
 import math
 import warnings
 from typing import TYPE_CHECKING, Any
-
+import paddle
+import paddleformers
 import torch
+
 import torch.nn as nn
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
-from transformers.utils.deprecation import deprecate_kwarg
+from paddleformers.transformers.model_outputs import CausalLMOutputWithPast
 
 from fla.layers.path_attn import PaTHAttention
 from fla.models.path_attn.configuration_path_attention import PaTHAttentionConfig
@@ -18,19 +18,21 @@ from fla.modules import FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss, RMSN
 from fla.modules import GatedMLP as PaTHAttentionMLP
 from fla.modules.l2warp import l2_warp
 
+from ...paddle_utils import *
+
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
 
 try:
     from transformers.modeling_layers import GradientCheckpointingLayer
 except ImportError:
     from fla.models.modeling_layers import GradientCheckpointingLayer
-
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class PaTHAttentionBlock(GradientCheckpointingLayer):
+
 
     def __init__(self, config: PaTHAttentionConfig, layer_idx: int):
         super().__init__()
@@ -98,7 +100,7 @@ class PaTHAttentionBlock(GradientCheckpointingLayer):
         return outputs
 
 
-class PaTHAttentionPreTrainedModel(PreTrainedModel):
+class PaTHAttentionPreTrainedModel(paddleformers.transformers.PretrainedModel):
 
     config_class = PaTHAttentionConfig
     base_model_prefix = 'model'
@@ -115,7 +117,7 @@ class PaTHAttentionPreTrainedModel(PreTrainedModel):
         rescale_prenorm_residual: bool = False,
         num_residuals_per_layer: int = 2,
     ):
-        if isinstance(module, (nn.Linear, nn.Conv1d)):
+        if isinstance(module, (paddle.compat.nn.Linear, nn.Conv1d)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             nn.init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
@@ -237,8 +239,8 @@ class PaTHAttentionModel(PaTHAttentionPreTrainedModel):
 
             if output_attentions:
                 all_attns += (layer_outputs[1],)
-
         hidden_states = self.norm(hidden_states)
+
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
@@ -247,7 +249,7 @@ class PaTHAttentionModel(PaTHAttentionPreTrainedModel):
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_attns] if v is not None)
 
-        return BaseModelOutputWithPast(
+        return paddleformers.transformers.model_outputs.BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
@@ -263,7 +265,8 @@ class PaTHAttentionForCausalLM(PaTHAttentionPreTrainedModel, FLAGenerationMixin)
         super().__init__(config)
         self.model = PaTHAttentionModel(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = paddle.compat.nn.Linear(config.hidden_size, config.
+                                               vocab_size, bias=False)
         self.criterion = None
 
         # Initialize weights and apply final processing
@@ -287,7 +290,6 @@ class PaTHAttentionForCausalLM(PaTHAttentionPreTrainedModel, FLAGenerationMixin)
     def get_decoder(self):
         return self.model
 
-    @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -332,7 +334,7 @@ class PaTHAttentionForCausalLM(PaTHAttentionPreTrainedModel, FLAGenerationMixin)
                 elif self.config.fuse_cross_entropy:
                     criterion = FusedCrossEntropyLoss(inplace_backward=True)
                 else:
-                    criterion = nn.CrossEntropyLoss()
+                    criterion = paddle.nn.CrossEntropyLoss()
             else:
                 criterion = self.criterion
             # Enable model parallelism
@@ -341,14 +343,14 @@ class PaTHAttentionForCausalLM(PaTHAttentionPreTrainedModel, FLAGenerationMixin)
             if self.config.fuse_linear_cross_entropy:
                 loss = criterion(hidden_states, labels, self.lm_head.weight, self.lm_head.bias)
             else:
-                loss = criterion(logits.view(labels.numel(), -1), labels.view(-1))
+                loss = criterion(logits.view(labels.size, -1), labels.view(-1))
                 loss = l2_warp(loss, logits) if self.config.use_l2warp else loss
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        return paddleformers.transformers.model_outputs.CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,

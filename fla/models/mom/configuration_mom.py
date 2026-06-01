@@ -1,9 +1,9 @@
+import paddleformers
 
 
-from transformers.configuration_utils import PretrainedConfig
 
 
-class MomConfig(PretrainedConfig):
+class MomConfig(paddleformers.transformers.PretrainedConfig):
     model_type = 'mom'
     keys_to_ignore_at_inference = ['past_key_values']
 

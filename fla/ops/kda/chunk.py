@@ -75,7 +75,6 @@ class ChunkKDAFunction(torch.autograd.Function):
         )
 
         if return_intermediate_states:
-            assert torch.is_inference_mode_enabled(), "return_intermediate_states is only allowed in inference mode"
             assert disable_recompute is False, "return_intermediate_states must be used with disable_recompute=False"
             return o.type_as(q), final_state, h
 
@@ -103,11 +102,7 @@ class ChunkKDAFunction(torch.autograd.Function):
         do: torch.Tensor,
         dht: torch.Tensor,
     ):
-        (q, q_rstd, k, k_rstd, v, g_cumsum, g_input, beta, A_log, dt_bias, Aqk, Akk,
-         w, u, qg, kg, v_new, h,
-         initial_state, cu_seqlens, chunk_indices) = (
-            ctx.saved_tensors
-        )
+        q, q_rstd, k, k_rstd, v, g_cumsum, g_input, beta, A_log, dt_bias, Aqk, Akk, w, u, qg, kg, v_new, h, initial_state, cu_seqlens, chunk_indices = ctx.saved_tensor()
 
         dq, dk, dv, db, dg, dh0, dA, dbias = chunk_kda_bwd(
             q=q,
@@ -141,7 +136,6 @@ class ChunkKDAFunction(torch.autograd.Function):
                 None, None, None, None, None, None, None, None, None, None, None)
 
 
-@torch.compiler.disable
 def chunk_kda(
     q: torch.Tensor,
     k: torch.Tensor,

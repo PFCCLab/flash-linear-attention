@@ -1,14 +1,15 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
-
 from __future__ import annotations
+
+import logging
 
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from transformers.utils import logging
 
 from fla.layers.utils import pad_input, unpad_input
 from fla.modules import RMSNorm, ShortConvolution
@@ -19,7 +20,7 @@ from fla.ops.path_attn.parallel import parallel_path_attn
 if TYPE_CHECKING:
     from fla.models.utils import Cache
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class PaTHAttention(nn.Module):
@@ -49,20 +50,20 @@ class PaTHAttention(nn.Module):
 
         self.layer_idx = layer_idx
 
-        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=False)
 
         # We use low-rank parameterization for the w_proj to reduce parameters in MHA settings.
         if use_low_rank_w:
             self.w_proj = nn.Sequential(
-                nn.Linear(self.hidden_size, 32, bias=False),
-                nn.Linear(32, self.kv_dim, bias=False),
+                paddle.compat.nn.Linear(self.hidden_size, 32, bias=False),
+                paddle.compat.nn.Linear(32, self.kv_dim, bias=False),
             )
         # In MQA/GQA settings, key/value heads are shared, so we use a standard linear projection
         # which doesn't introduce too many parameters
         else:
-            self.w_proj = nn.Linear(self.hidden_size, self.kv_dim, bias=False)
+            self.w_proj = paddle.compat.nn.Linear(self.hidden_size, self.kv_dim, bias=False)
 
         # per head norm
         if use_qk_norm:
@@ -75,11 +76,11 @@ class PaTHAttention(nn.Module):
         if use_w_shortconv:
             self.w_conv1d = ShortConvolution(hidden_size=self.kv_dim, kernel_size=conv_size, bias=conv_bias, activation='silu')
         self.use_w_shortconv = use_w_shortconv
-        self.bt_proj = nn.Linear(self.hidden_size, self.num_kv_heads, bias=True)
+        self.bt_proj = paddle.compat.nn.Linear(self.hidden_size, self.num_kv_heads, bias=True)
         self.use_forget_gate = use_forget_gate
         if use_forget_gate:
-            self.g_proj = nn.Linear(self.hidden_size, self.num_heads, bias=True)
-        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+            self.g_proj = paddle.compat.nn.Linear(self.hidden_size, self.num_heads, bias=True)
+        self.o_proj = paddle.compat.nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
     def forward(
         self,
@@ -143,7 +144,6 @@ class PaTHAttention(nn.Module):
                 w = rearrange(w, '... (h d) -> ... h d', d=self.head_dim)
                 w = l2_norm(w, output_dtype=torch.float32)
 
-                @torch.compile
                 def rank_one_update(k, w, beta):
                     original_dtype = k.dtype
                     k = k.float()

@@ -81,8 +81,7 @@ def naive_cumsum_abc(
     q, k, v, s = map(lambda x: x.float(), (q, k, v, s))
 
     scale = q.shape[-1] ** -0.5
-    # [batch_size, n_heads, seq_len, n_slots]
-    s = (s - s.max(2, True)[0]).exp()
+    s = (s - (s.max(2, True), s.argmax(2, True))[0]).exp()
     z = s.cumsum(2)
     # [batch_size, n_heads, seq_len, n_slots, d_head]
     K = (s.unsqueeze(-1) * k.unsqueeze(-2)).cumsum(2) / z.unsqueeze(-1)

@@ -15,10 +15,10 @@
 import math
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class Mamba2Config(PretrainedConfig):
+class Mamba2Config(paddleformers.transformers.PretrainedConfig):
     """
     This is the configuration class to store the configuration of a [`Mamba2Model`]. It is used to instantiate a MAMBA2
     model according to the specified arguments, defining the model architecture. Instantiating a configuration with the

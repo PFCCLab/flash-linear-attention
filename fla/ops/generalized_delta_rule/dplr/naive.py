@@ -45,8 +45,7 @@ def dplr_chunkwise(q, k, v, alpha, beta, gk, initial_state=None, output_final_st
 
     # note that diagonal is masked.
     mask = torch.triu(torch.ones(chunk_size, chunk_size, dtype=torch.bool, device=q.device), diagonal=0)
-    q, k, v, alpha, beta, gk = map(lambda x: rearrange(x, 'b h (n c) d -> b h n c d',
-                                   c=chunk_size).float(), [q, k, v, alpha, beta, gk])
+    q, k, v, alpha, beta, gk = map(lambda x: rearrange(x, 'b h (n c) d -> b h n c d', c=chunk_size).float(), [q, k, v, alpha, beta, gk])
 
     gk_cumsum = gk.cumsum(-2)
 

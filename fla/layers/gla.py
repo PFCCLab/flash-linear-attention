@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,7 +17,7 @@ from fla.modules.activations import ACT2FN
 from fla.ops.gla import chunk_gla, fused_chunk_gla, fused_recurrent_gla
 
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
     from fla.models.utils import Cache
 
@@ -120,11 +121,11 @@ class GatedLinearAttention(nn.Module):
         self.head_k_dim = self.key_dim // num_heads
         self.head_v_dim = self.value_dim // num_heads
 
-        self.q_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, self.key_dim_per_group, bias=False)
-        self.v_proj = nn.Linear(hidden_size, self.value_dim_per_group, bias=False)
+        self.q_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim_per_group, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim_per_group, bias=False)
         if self.use_output_gate:
-            self.g_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
+            self.g_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
 
         if use_short_conv:
             self.conv_size = conv_size
@@ -146,10 +147,11 @@ class GatedLinearAttention(nn.Module):
                 bias=conv_bias,
                 activation='silu',
             )
-
-        self.gk_proj = nn.Sequential(nn.Linear(hidden_size, gate_low_rank_dim, bias=False),
-                                     nn.Linear(gate_low_rank_dim, self.key_dim_per_group, bias=True))
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.gk_proj = nn.Sequential(
+            paddle.compat.nn.Linear(hidden_size, gate_low_rank_dim, bias=False),
+            paddle.compat.nn.Linear(gate_low_rank_dim, self.key_dim_per_group, bias=True),
+        )
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
 
         if gate_fn == 'swish' and fuse_norm and use_output_gate:
             self.g_norm_swish_gate = FusedRMSNormGated(
@@ -234,7 +236,7 @@ class GatedLinearAttention(nn.Module):
 
         gk = F.logsigmoid(gk) / self.gate_logit_normalizer
         if self.clamp_min is not None:
-            gk = torch.clamp_min(gk, self.clamp_min)
+            gk = paddle.clip(x=gk, min=self.clamp_min)
 
         if self.feature_map_fn is not None:
             q, k = map(self.feature_map_fn, (q, k))

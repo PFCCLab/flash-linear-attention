@@ -1,5 +1,9 @@
 import torch
-import torch.distributed as dist
+
+try:
+    import torch.distributed as dist
+except (ImportError, AttributeError):
+    dist = None
 
 from fla.ops.cp import FLACPContext, conv_cp_send_recv_bwd, conv_cp_send_recv_fwd
 from fla.ops.utils import prepare_chunk_indices
@@ -22,10 +26,10 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
     def _prepare_initial_state_for_cp(
         x: torch.Tensor,
         weight: torch.Tensor,
-        cu_seqlens: torch.Tensor | None,
+        cu_seqlens: (torch.Tensor | None),
         context: FLACPContext,
-        group: dist.ProcessGroup | None,
-    ) -> torch.Tensor | None:
+        group,
+    ) -> (torch.Tensor | None):
         """Prepare initial_state for CP forward pass by communicating with previous rank.
 
         Args:
@@ -66,14 +70,8 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
         return initial_state
 
     @staticmethod
-    def _correct_dx_for_cp(
-        dx: torch.Tensor,
-        dh0: torch.Tensor | None,
-        W: int,
-        group: dist.ProcessGroup | None,
-        is_first_rank: bool,
-        pre_num_conv_tokens: int = 0,
-    ) -> None:
+    def _correct_dx_for_cp(dx: torch.Tensor, dh0: (torch.Tensor | None), W:
+                           int, group, is_first_rank: bool, pre_num_conv_tokens: int = 0) -> None:
         """Correct dx gradients for CP backward pass by communicating with next rank.
 
         Args:
@@ -167,15 +165,15 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
             chunk_indices=chunk_indices,
             BT=chunk_size,
         )
-
         return y
+
 
     @staticmethod
     def backward(ctx, dy: torch.Tensor):
         # Import here to avoid circular dependency
         from fla.modules.conv.triton.ops import causal_conv1d_bwd
 
-        x, weight, bias, initial_state = ctx.saved_tensors
+        x, weight, bias, initial_state = ctx.saved_tensor()
         group = ctx.group
         W = ctx.W
 

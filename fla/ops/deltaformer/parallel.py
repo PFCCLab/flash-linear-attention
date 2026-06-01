@@ -1,24 +1,18 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
 import math
-import warnings
 
+import paddle
 import torch
 import triton
 import triton.language as tl
 
+from fla.layers.utils import pad_input, unpad_input
+from ...paddle_utils import *
 from . import invcum
 
-try:
-    from flash_attn import flash_attn_func, flash_attn_varlen_func
-except ImportError:
-    warnings.warn(
-        "Flash Attention is not installed. Please install it via `pip install flash-attn --no-build-isolation`",
-        category=ImportWarning,
-    )
-    flash_attn_func = None
 
-from fla.layers.utils import pad_input, unpad_input
+
 
 BLOCK_SIZE_C = 512
 
@@ -698,7 +692,7 @@ class ParallelDeltaformerFunction(torch.autograd.Function):
     ):
         if getattr(ctx, 'cu_seqlens', None) is not None:
             cu = ctx.cu_seqlens
-            qo, ko, vo, u_full, ws, lses, betao = ctx.saved_tensors
+            qo, ko, vo, u_full, ws, lses, betao = ctx.saved_tensor()
             B, T_max, H, D = ko.size()
             qk_scale = 1.0 / math.sqrt(D)
             fa_scale = qk_scale / math.log(2)
@@ -763,7 +757,7 @@ class ParallelDeltaformerFunction(torch.autograd.Function):
                     dbeta[0, seq_start:seq_end, :].copy_(gbeta)
 
             return dq, dk, dv, dbeta, None, None
-        qo, ko, vo, u, ws, lses, betao = ctx.saved_tensors
+        qo, ko, vo, u, ws, lses, betao = ctx.saved_tensor()
         C = ctx.C
         B, T, H, D = ko.size()
 
@@ -947,8 +941,6 @@ def deltaformer_attn(
     cu_seqlens: torch.LongTensor | None = None,
     C: int = BLOCK_SIZE_C,
 ) -> torch.Tensor:
-    if flash_attn_func is None:
-        raise ImportError("Please install Flash Attention via `pip install flash-attn --no-build-isolation` first")
 
     B, T, H, D = k.shape
     C = min(C, T)
@@ -959,29 +951,27 @@ def deltaformer_attn(
         q_padded, (k_padded, u_padded), indices_q, cu_seqlens_lens, max_seq_lens = unpad_input(q, (k, u), attention_mask, T)
         cu_seqlens_q, cu_seqlens_k = cu_seqlens_lens
         max_seqlen_q, max_seqlen_k = max_seq_lens
-        o = flash_attn_varlen_func(
+        o = paddle.nn.functional.flash_attention.flash_attn_varlen_func(
             q_padded, k_padded, u_padded,
             cu_seqlens_q=cu_seqlens_q,
             cu_seqlens_k=cu_seqlens_k,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_k=max_seqlen_k,
             causal=True,
-            window_size=(-1, -1),
         )
         o = pad_input(o, indices_q, B, T)
     elif cu_seqlens is not None:
-        max_seqlen = int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
-        o = flash_attn_varlen_func(
+        max_seqlen = int((cu_seqlens[1:] - cu_seqlens[:-1])._max().item())
+        o = paddle.nn.functional.flash_attention.flash_attn_varlen_func(
             q.squeeze(0), k.squeeze(0), u.squeeze(0),
             cu_seqlens_q=cu_seqlens,
             cu_seqlens_k=cu_seqlens,
             max_seqlen_q=max_seqlen,
             max_seqlen_k=max_seqlen,
             causal=True,
-            window_size=(-1, -1),
         ).unsqueeze(0)
     else:
-        o = flash_attn_func(q, k, u, causal=True, window_size=(-1, -1))
+        o = paddle.nn.functional.flash_attention.flash_attention(q, k, u, causal=True)[0]
 
     return o
 

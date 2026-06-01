@@ -1,7 +1,7 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
+import paddle
 import torch
-import torch.nn.functional as F
 
 
 def naive_parallel_attn(
@@ -51,13 +51,11 @@ def naive_parallel_attn(
     if causal:
         causal_mask = torch.triu(torch.ones(T, T, dtype=torch.bool, device=q.device), diagonal=1)
         scores = scores.masked_fill(causal_mask.unsqueeze(0), float('-inf'))
-
-    # Compute max_logits (max over key dimension): [B*H*G, T]
-    max_logits_flat = scores.max(dim=-1).values
+    max_logits_flat = (scores.max(axis=-1), scores.argmax(axis=-1)).values
     max_logits = max_logits_flat.reshape(B, T, HQ)  # [B, T, HQ]
 
     # Compute attention weights and output
-    attn_weights = F.softmax(scores, dim=-1)  # [B*H*G, T, T]
+    attn_weights = paddle.compat.nn.functional.softmax(scores, dim=-1)  # [B*H*G, T, T]
     output_flat = torch.bmm(attn_weights, v_flat)  # [B*H*G, T, D]
     output = output_flat.reshape(B, T, HQ, D)  # [B, T, HQ, D]
 

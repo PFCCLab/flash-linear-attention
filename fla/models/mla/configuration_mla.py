@@ -1,10 +1,10 @@
 
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class MLAConfig(PretrainedConfig):
+class MLAConfig(paddleformers.transformers.PretrainedConfig):
 
     model_type = 'mla'
     keys_to_ignore_at_inference = ['past_key_values']

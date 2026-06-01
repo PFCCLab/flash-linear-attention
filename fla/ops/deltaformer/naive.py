@@ -26,7 +26,7 @@ def tril_softmax(scores: torch.Tensor, strict: bool = True) -> torch.Tensor:
         mask = (j <= i)
 
     masked = scores.masked_fill(~mask, float('-inf'))
-    max_per_row = masked.max(dim=-1, keepdim=True).values
+    max_per_row = (masked.max(keepdim=True, axis=-1), masked.argmax(keepdim=True, axis=-1)).values
     exp = (masked - max_per_row).exp()
     exp = exp.masked_fill(~mask, 0.0)
     denom = exp.sum(dim=-1, keepdim=True).clamp_min_(1e-20)

@@ -1,6 +1,6 @@
 
+import paddle
 import torch
-import torch.nn.functional as F
 
 from fla.ops.titans.log_impl import combine_params_log
 
@@ -327,12 +327,12 @@ def chunk_titans_linear_ref(
     seq_len = q.shape[-2]
     pad_len = (chunk_size - (seq_len % chunk_size)) % chunk_size
     if pad_len > 0:
-        q = F.pad(q, (0, 0, 0, pad_len))
-        k = F.pad(k, (0, 0, 0, pad_len))
-        v = F.pad(v, (0, 0, 0, pad_len))
-        theta = F.pad(theta, (0, 0, 0, pad_len))
-        alpha = F.pad(alpha, (0, 0, 0, pad_len))
-        eta = F.pad(eta, (0, 0, 0, pad_len))
+        q = paddle.compat.nn.functional.pad(q, (0, 0, 0, pad_len))
+        k = paddle.compat.nn.functional.pad(k, (0, 0, 0, pad_len))
+        v = paddle.compat.nn.functional.pad(v, (0, 0, 0, pad_len))
+        theta = paddle.compat.nn.functional.pad(theta, (0, 0, 0, pad_len))
+        alpha = paddle.compat.nn.functional.pad(alpha, (0, 0, 0, pad_len))
+        eta = paddle.compat.nn.functional.pad(eta, (0, 0, 0, pad_len))
         theta[:, :, -1, :] = theta[:, :, -(pad_len + 1), :]
         alpha[:, :, -1, :] = alpha[:, :, -(pad_len + 1), :]
         eta[:, :, -1, :] = eta[:, :, -(pad_len + 1), :]

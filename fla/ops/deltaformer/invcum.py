@@ -1,12 +1,12 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
-
+import paddle
 import torch
 
 
 def forward(u, w):
-    return torch.linalg.solve_triangular(
-        w.float(),
-        u.float(),
+    return paddle.linalg.triangular_solve(
+        x=w.float(),
+        y=u.float(),
         upper=False,
         unitriangular=True,
     ).to(u.dtype)
@@ -17,21 +17,23 @@ def forward_inplace(u, w):
 
 
 def backward_x(do, w):
-    return torch.linalg.solve_triangular(
-        w.tril(-1).mH.float(),
-        do.float(),
+    return paddle.linalg.triangular_solve(
+        x=w.tril(-1).mH.float(),
+        y=do.float(),
         upper=True,
         unitriangular=True,
     ).to(do.dtype)
 
 
 def backward(do, w, x):
-    du = torch.linalg.solve_triangular(
-        w.tril(-1).mH.float(),
-        do.float(),
+    du = paddle.linalg.triangular_solve(
+        x=w.tril(-1).mH.float(),
+        y=do.float(),
         upper=True,
         unitriangular=True,
     ).to(do.dtype)
-    dw = torch.bmm(-du, x.mH)
+    perm_0 = list(range(x.ndim))
+    perm_0[-1], perm_0[-2] = perm_0[-2], perm_0[-1]
+    dw = torch.bmm(-du, x.transpose(perm=perm_0).conj())
     dw = dw.tril(-1)
     return du, dw

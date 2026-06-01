@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -104,10 +105,10 @@ class RWKV7Attention(nn.Module):
         self.k_a = nn.Parameter(torch.zeros(self.key_dim))
         self.r_k = nn.Parameter(torch.zeros(self.num_heads, self.head_dim))
 
-        self.r_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, self.key_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_size, self.value_dim, bias=False)
-        self.o_proj = nn.Linear(self.value_dim, hidden_size, bias=False)
+        self.r_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.k_proj = paddle.compat.nn.Linear(hidden_size, self.key_dim, bias=False)
+        self.v_proj = paddle.compat.nn.Linear(hidden_size, self.value_dim, bias=False)
+        self.o_proj = paddle.compat.nn.Linear(self.value_dim, hidden_size, bias=False)
 
         self.w_lora = LoRA(hidden_size, self.key_dim, low_rank_dim=decay_low_rank_dim, activation='tanh')
         if self.layer_idx != 0:
@@ -132,7 +133,7 @@ class RWKV7Attention(nn.Module):
             )
 
         try:
-            from transformers.modeling_utils import _init_weights
+            from paddleformers.transformers.model_utils import _init_weights
         except ImportError:
             _init_weights = True
         if _init_weights:
@@ -148,7 +149,6 @@ class RWKV7Attention(nn.Module):
         )
 
     @torch.no_grad()
-    @torch.compiler.disable
     def _initialize_weights(self, module: nn.Module):
         if getattr(module, "_is_hf_initialized", False):
             return

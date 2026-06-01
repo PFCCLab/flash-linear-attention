@@ -42,10 +42,11 @@ def causal_conv1d_fwd(
         chunk_indices = prepare_chunk_indices(cu_seqlens, BT, cu_seqlens_cpu=cu_seqlens_cpu)
     NT = len(chunk_indices) if cu_seqlens is not None else triton.cdiv(T, BT)
     NB = triton.cdiv(B*T, 1024)
+    y = torch.empty_like(x)
 
-    y = torch.empty_like(x, memory_format=torch.contiguous_format)
+    def grid(meta):
 
-    def grid(meta): return (triton.cdiv(D, meta['BD']), NT, B)
+        return triton.cdiv(D, meta['BD']), NT, B
     causal_conv1d_fwd_kernel[grid](
         x=x,
         y=y,
@@ -281,7 +282,7 @@ def causal_conv1d_update(
         x = rearrange(x, 'b t ... -> b t (...)')
 
     D = x.shape[-1]
-    N = x.numel() // D
+    N = x.size // D
     W = weight.shape[1] if weight is not None else None
     BD = 8
     BW = triton.next_power_of_2(W)
@@ -304,7 +305,7 @@ def causal_conv1d_update(
         # Fallback / Error case
         raise ValueError(f"Unsupported input shape: {x.shape}")
 
-    y = torch.empty_like(x, memory_format=torch.contiguous_format)
+    y = torch.empty_like(x)
 
     if y.dim() == 2:
         stride_y_n, stride_y_d = y.stride(0), y.stride(1)
@@ -313,7 +314,8 @@ def causal_conv1d_update(
     elif y.dim() == 3:
         stride_y_n, stride_y_d = y.stride(0), y.stride(2)
 
-    def grid(meta): return (triton.cdiv(D, meta['BD']), N)
+    def grid(meta):
+        return triton.cdiv(D, meta['BD']), N
 
     causal_conv1d_update_kernel[grid](
         x=x,
@@ -380,7 +382,7 @@ class CausalConv1dFunction(torch.autograd.Function):
     @staticmethod
     @input_guard(no_guard_contiguous=["dy"])
     def backward(ctx, dy: torch.Tensor, dht: torch.Tensor | None = None):
-        x, weight, bias, residual, initial_state = ctx.saved_tensors
+        x, weight, bias, residual, initial_state = ctx.saved_tensor()
         dx, dw, db, dr, dh0 = causal_conv1d_bwd(
             x=x,
             dy=dy,

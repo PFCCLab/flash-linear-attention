@@ -50,7 +50,7 @@
         return loss
 """
 
-
+import paddle
 import torch
 import triton
 import triton.language as tl
@@ -257,8 +257,7 @@ class GrpoLoss(torch.autograd.Function):
     @input_guard
     @staticmethod
     def backward(ctx, dloss):
-        # The grad of logits comes from two parts, the reward part and the kl part
-        lse, logits, input_ids, advantages, completion_mask = ctx.saved_tensors
+        lse, logits, input_ids, advantages, completion_mask = ctx.saved_tensor()
         inplace = ctx.inplace
         B, L_ADD_1, N = ctx.input_shape
         L = L_ADD_1 - 1
@@ -349,7 +348,6 @@ def grpo_loss_torch(logits, ref_logp, input_ids, advantages, beta=0.1, completio
     return per_token_loss if not save_kl else (per_token_loss, per_token_kl)
 
 
-@torch.compile(fullgraph=True)
 def grpo_loss_with_old_logps(
     logps: torch.Tensor,
     ref_logps: torch.Tensor,
@@ -405,7 +403,7 @@ def grpo_loss_with_old_logps(
 
     # Calculate the per - token loss. It takes the minimum of the unclipped and clipped importance weights
     # and subtracts the KL divergence term weighted by beta, then multiplies by the completion mask
-    token_loss = -(torch.min(advantages * importance_weights, advantages *
+    token_loss = -(paddle.compat.min(advantages * importance_weights, advantages *
                    importance_weights_clipped) - beta * per_token_kl) * completion_mask
 
     # Calculate the final loss by summing the token losses and normalizing by the number of valid tokens

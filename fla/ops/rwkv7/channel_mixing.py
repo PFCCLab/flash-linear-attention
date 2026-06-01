@@ -2,6 +2,7 @@
 
 import logging
 
+import paddle
 import torch
 import triton
 import triton.language as tl
@@ -95,12 +96,12 @@ def rwkv_mix_torch(x: torch.Tensor, x_prev: torch.Tensor, x_k: torch.Tensor):
     if x_prev.dim() == 2:
         x_prev = x_prev.unsqueeze(1)  # (batch_size, 1, hidden_dim)
     xx = torch.cat((x_prev, x[:, :-1, :]), dim=1) - x
-    k = x.addcmul(xx, x_k)
+    k = paddle.add(x, 1 * xx * x_k)
     return k
 
 
 def rwkv_relu_and_square_torch(x: torch.Tensor):
-    return torch.relu(x) ** 2
+    return paddle.nn.functional.relu(x=x) ** 2
 
 
 def rwkv_mix_fwd(x, x_prev, x_k):
@@ -151,10 +152,10 @@ def rwkv_relu_and_square_fwd(x: torch.Tensor, inplace: bool = True):
     x = x.contiguous()
     output = x if inplace else torch.empty_like(x)
 
-    def grid(meta): return (
-        (output.numel() + meta['BLOCK_SIZE'] - 1) // meta['BLOCK_SIZE'],  # grid_0
-        1,  # grid_1
-        1,   # grid_2
+    def grid(meta): return(
+        (output.size + meta['BLOCK_SIZE'] - 1) // meta['BLOCK_SIZE'],
+        1,
+        1,
     )
     rwkv_channel_mixing_pow_and_relu[grid](
         x,
@@ -240,7 +241,6 @@ def rwkv_mix_bwd_kenel(
     )
 
 
-@torch.compile(fullgraph=True)
 def compute_x_k_grad(dk1, x, x_prev):
     """
     Args:
@@ -266,7 +266,7 @@ def rwkv_channel_mixing_bwd(grad_output, x, x_prev, x_k, key_weight, value_weigh
     dk = grad_output @ value_weight.transpose(-2, -1)
 
     BLOCK_SIZE = 4096
-    grid = ((dk.numel() + BLOCK_SIZE - 1) // BLOCK_SIZE,)
+    grid = (dk.size + BLOCK_SIZE - 1) // BLOCK_SIZE,
     relu_square_bwd_kernel[grid](
         dk,
         k1_K,
@@ -311,7 +311,7 @@ class Rwkv7ChannelMixing(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, dkv):
-        x, x_prev, x_k, key_weight, value_weight = ctx.saved_tensors
+        x, x_prev, x_k, key_weight, value_weight = ctx.saved_tensor()
         k1 = rwkv_mix_fwd(x, x_prev, x_k)
         k1_K = k1 @ key_weight
         k = rwkv_relu_and_square_fwd(k1_K, inplace=False)

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import math
 
+import paddle
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import triton
 import triton.language as tl
 
@@ -677,7 +677,7 @@ class LayerNormGatedFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, dy, *args):
-        x, g, weight, bias, mean, rstd = ctx.saved_tensors
+        x, g, weight, bias, mean, rstd = ctx.saved_tensor()
         dy = dy.reshape(-1, dy.shape[-1])
         assert dy.shape == x.shape
         if ctx.prenorm:
@@ -755,7 +755,7 @@ class LayerNormGatedLinearFunction(torch.autograd.Function):
         dtype = torch.get_autocast_gpu_dtype() if torch.is_autocast_enabled() else y.dtype
         linear_weight = linear_weight.to(dtype)
         linear_bias = linear_bias.to(dtype) if linear_bias is not None else None
-        out = F.linear(y.to(linear_weight.dtype), linear_weight, linear_bias)
+        out = paddle.compat.nn.functional.linear(y.to(linear_weight.dtype), linear_weight, linear_bias)
         # We don't store y, will be recomputed in the backward pass to save memory
         ctx.save_for_backward(residual_out, g, norm_weight, norm_bias, linear_weight, mean, rstd)
         ctx.x_shape_og = x_shape_og
@@ -771,9 +771,9 @@ class LayerNormGatedLinearFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, dout, *args):
-        x, g, norm_weight, norm_bias, linear_weight, mean, rstd = ctx.saved_tensors
+        x, g, norm_weight, norm_bias, linear_weight, mean, rstd = (ctx.saved_tensor())
         dout = dout.reshape(-1, dout.shape[-1])
-        dy = F.linear(dout, linear_weight.t())
+        dy = paddle.compat.nn.functional.linear(dout, linear_weight.t())
         dlinear_bias = None if ctx.linear_bias_is_none else dout.sum(0)
         assert dy.shape == x.shape
         if ctx.prenorm:
@@ -925,7 +925,7 @@ class FusedLayerNormGated(nn.Module):
         bias: bool = False,
         activation: str = "swish",
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device = None,
         dtype: torch.dtype | None = None,
     ) -> FusedLayerNormGated:
         factory_kwargs = {"device": device, "dtype": dtype}

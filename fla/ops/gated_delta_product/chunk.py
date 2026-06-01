@@ -164,7 +164,7 @@ class ChunkGatedDeltaProductFunction(torch.autograd.Function):
         do: torch.Tensor,
         dht: torch.Tensor,
     ):
-        q, q_rstd, k, k_rstd, v, g, beta, A, initial_state, cu_seqlens, chunk_indices_dp = ctx.saved_tensors
+        q, q_rstd, k, k_rstd, v, g, beta, A, initial_state, cu_seqlens, chunk_indices_dp = ctx.saved_tensor()
         q_new = q.new_zeros(q.shape[0], q.shape[1], ctx.num_householder, q.shape[2], q.shape[3])
         q_new[:, :, -1] = q
         do_new = do.new_zeros(do.shape[0], do.shape[1], ctx.num_householder, do.shape[2], do.shape[3])
@@ -212,7 +212,6 @@ class ChunkGatedDeltaProductFunction(torch.autograd.Function):
         return dq.to(q), dk.to(k), dv.to(v), dg, db.to(beta), None, None, dh0, None, None, None, None
 
 
-@torch.compiler.disable
 def chunk_gated_delta_product(
     q: torch.Tensor,
     k: torch.Tensor,

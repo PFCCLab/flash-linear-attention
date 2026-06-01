@@ -61,7 +61,7 @@ def pack_sequence_fwdbwd(
     padding_side: str,
 ) -> torch.Tensor:
     B, S = x.shape[:2]
-    D = x.numel() // (B * S)
+    D = x.size // (B * S)
     BD = min(triton.next_power_of_2(D), 4096)
     ND = triton.cdiv(D, BD)
 
@@ -89,7 +89,7 @@ def unpack_sequence_fwdbwd(
         desired_shape = (len(cu_seqlens) - 1, prepare_lens(cu_seqlens).max().item(), *x.shape[1:])
     y = torch.zeros(desired_shape, device=x.device, dtype=x.dtype)
     B, S = y.shape[:2]
-    D = y.numel() // (B * S)
+    D = y.size // (B * S)
     BD = min(triton.next_power_of_2(D), 4096)
     ND = triton.cdiv(D, BD)
 

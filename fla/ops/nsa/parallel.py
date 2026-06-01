@@ -2,6 +2,7 @@
 
 import warnings
 
+import paddle
 import torch
 import triton
 import triton.language as tl
@@ -14,14 +15,7 @@ from fla.ops.utils.op import exp, log
 from fla.ops.utils.pooling import mean_pooling
 from fla.utils import autocast_custom_bwd, autocast_custom_fwd, autotune_cache_kwargs, check_shared_mem, contiguous
 
-try:
-    from flash_attn import flash_attn_func, flash_attn_varlen_func
-except ImportError:
-    warnings.warn(
-        "Flash Attention is not installed. Please install it via `pip install flash-attn --no-build-isolation`",
-        category=ImportWarning,
-    )
-    flash_attn_func = None
+from ...paddle_utils import *
 
 
 @triton.heuristics({
@@ -504,8 +498,7 @@ def parallel_nsa_topk(
     B, T, HQ, K = q.shape
     H = k.shape[2]
     G = HQ // H
-    # the number of selected blocks for each token
-    S = block_counts if isinstance(block_counts, int) else block_counts.max().item()
+    S = block_counts if isinstance(block_counts, int) else block_counts._max().item()
     S = triton.next_power_of_2(S)
     # here we set BC = BS, but beware that they can be chosen separately if required
     BC = BS = block_size
@@ -716,7 +709,6 @@ def parallel_nsa_bwd(
     return dq, dk, dv
 
 
-@torch.compile
 class ParallelNSAFunction(torch.autograd.Function):
 
     @staticmethod
@@ -755,7 +747,7 @@ class ParallelNSAFunction(torch.autograd.Function):
     @contiguous
     @autocast_custom_bwd
     def backward(ctx, do):
-        q, k, v, o, lse = ctx.saved_tensors
+        q, k, v, o, lse = ctx.saved_tensor()
         dq, dk, dv = parallel_nsa_bwd(
             q=q,
             k=k,
@@ -859,24 +851,24 @@ def parallel_nsa(
     if g_slc is not None:
         o = o_slc * g_slc.unsqueeze(-1)
     if o_cmp is not None:
-        o = torch.addcmul(o, o_cmp, g_cmp.unsqueeze(-1))
+        orig_dtype = o.dtype
+        o = (o.astype('float32') + o_cmp.astype('float32') * g_cmp.unsqueeze(-1).astype('float32')).astype(orig_dtype)
     if window_size > 0:
         if cu_seqlens is not None:
             max_seqlen = q.shape[1]
-            o_swa = flash_attn_varlen_func(
+            o_swa = paddle.nn.functional.flash_attention.flash_attn_varlen_func(
                 q.squeeze(0), k.squeeze(0), v.squeeze(0),
                 cu_seqlens_q=cu_seqlens,
                 cu_seqlens_k=cu_seqlens,
                 max_seqlen_q=max_seqlen,
                 max_seqlen_k=max_seqlen,
                 causal=True,
-                window_size=(window_size-1, 0),
             ).unsqueeze(0)
         else:
-            o_swa = flash_attn_func(
+            o_swa = paddle.nn.functional.flash_attention.flash_attention(
                 q, k, v,
                 causal=True,
-                window_size=(window_size-1, 0),
-            )
-        o = torch.addcmul(o, o_swa, g_swa.unsqueeze(-1))
+            )[0]
+        orig_dtype = o.dtype
+        o = (o.astype('float32') + o_swa.astype('float32') * g_swa.unsqueeze(-1).astype('float32')).astype(orig_dtype)
     return o

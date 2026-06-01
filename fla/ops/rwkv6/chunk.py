@@ -1195,7 +1195,7 @@ class ChunkRWKV6Function(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dht):
-        q, k, v, g, initial_state, A, u, chunk_indices = ctx.saved_tensors
+        q, k, v, g, initial_state, A, u, chunk_indices = ctx.saved_tensor()
         chunk_size, scale, cu_seqlens = ctx.chunk_size, ctx.scale, ctx.cu_seqlens
         dq, dk, dv, dg, du, dh0 = chunk_rwkv6_bwd(
             q=q,
@@ -1215,7 +1215,6 @@ class ChunkRWKV6Function(torch.autograd.Function):
         return dq.to(q), dk.to(k), dv.to(v), dg.to(g), du.to(u), None, dh0, None, None, None
 
 
-@torch.compiler.disable
 def chunk_rwkv6(
     r: torch.Tensor,
     k: torch.Tensor,

@@ -344,7 +344,7 @@ class ParallelBasedFunction(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dz):
-        q, k, v = ctx.saved_tensors
+        q, k, v = ctx.saved_tensor()
         scale = ctx.scale
         BTL, BTS = 64, 32
         assert BTL % BTS == 0

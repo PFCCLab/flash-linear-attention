@@ -1,10 +1,10 @@
 
 import warnings
 
-from transformers.configuration_utils import PretrainedConfig
+import paddleformers
 
 
-class NSAConfig(PretrainedConfig):
+class NSAConfig(paddleformers.transformers.PretrainedConfig):
 
     model_type = 'nsa'
     keys_to_ignore_at_inference = ['past_key_values']

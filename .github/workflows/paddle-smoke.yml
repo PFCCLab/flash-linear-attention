@@ -1,0 +1,84 @@
+name: Paddle Smoke
+
+on:
+  push:
+    branches: [paddle]
+  pull_request:
+    branches: [paddle]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: paddle-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  paddle-smoke:
+    name: paddle-smoke
+    runs-on: [self-hosted, linux, gpu, cuda-12-6]
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Paddle PR
+        uses: actions/checkout@v4
+        with:
+          path: paddle_fla
+
+      - name: Checkout Torch reference
+        uses: actions/checkout@v4
+        with:
+          repository: fla-org/flash-linear-attention
+          ref: main
+          path: torch_fla_ref
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+
+          # PyTorch CUDA 12.6
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+
+          # PaddlePaddle CUDA 12.6
+          python -m pip install paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+          # Test/runtime dependencies
+          python -m pip install pytest numpy einops paddleformers
+
+          # Install Paddle FLA checkout
+          python -m pip install --no-build-isolation -e paddle_fla
+
+      - name: Check GPU environment
+        run: |
+          nvidia-smi
+          nvcc --version || true
+          python - <<'PY'
+          import torch
+          import paddle
+
+          print("torch:", torch.__version__)
+          print("torch cuda:", torch.version.cuda)
+          print("torch cuda available:", torch.cuda.is_available())
+
+          print("paddle:", paddle.__version__)
+          print("paddle cuda device count:", paddle.device.cuda.device_count())
+          paddle.utils.run_check()
+          PY
+
+      - name: Run import smoke
+        run: |
+          pytest -q paddle_fla/tests/paddle/test_paddle_smoke.py::test_import
+
+      - name: Run precision smoke
+        env:
+          PADDLE_FLA_ROOT: ${{ github.workspace }}/paddle_fla
+          TORCH_FLA_ROOT: ${{ github.workspace }}/torch_fla_ref
+        run: |
+          pytest -q paddle_fla/tests/paddle/test_paddle_smoke.py::test_precision

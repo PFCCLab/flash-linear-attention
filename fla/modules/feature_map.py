@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 
+import paddle
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -16,7 +17,7 @@ from fla.utils import checkpoint
 def flatten_diag_outer_product(x, y):
     z = torch.einsum("...i,...j->...ij", x, y)
     N = z.size(-1)
-    indicies = torch.triu_indices(N, N)
+    indicies = paddle.triu_indices(row=N, col=N)
     return z[..., indicies[0], indicies[1]]
 
 
@@ -24,7 +25,7 @@ def flatten_diag_outer_product(x, y):
 def flatten_diag_outer_product_off1(x, y):
     z = torch.einsum("...i,...j->...ij", x, y)
     N = z.size(-1)
-    indicies = torch.triu_indices(N, N, 1)
+    indicies = paddle.triu_indices(row=N, col=N, offset=1)
     indices2 = torch.arange(0, N)
     return z[..., indicies[0], indicies[1]], z[..., indices2, indices2]
 
@@ -45,8 +46,7 @@ class HedgehogFeatureMap(nn.Module):
         head_dim: int,
     ) -> HedgehogFeatureMap:
         super().__init__()
-        # Trainable map
-        self.layer = nn.Linear(head_dim, head_dim)
+        self.layer = paddle.compat.nn.Linear(head_dim, head_dim)
         self.init_weights_()
 
     def init_weights_(self):
@@ -83,7 +83,7 @@ class T2RFeatureMap(nn.Module):
         self.dot_dim = dot_dim
         self.bias = bias
 
-        self.layer = nn.Linear(head_dim, dot_dim, bias=bias)
+        self.layer = paddle.compat.nn.Linear(head_dim, dot_dim, bias=bias)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(head_dim={self.head_dim}, dot_dim={self.dot_dim}, bias={self.bias})"
@@ -120,9 +120,8 @@ class HadamardFeatureMap(nn.Module):
         head_dim: int,
     ) -> HadamardFeatureMap:
         super().__init__()
-        # Trainable map
-        self.layer1 = nn.Linear(head_dim, head_dim)
-        self.layer2 = nn.Linear(head_dim, head_dim)
+        self.layer1 = paddle.compat.nn.Linear(head_dim, head_dim)
+        self.layer2 = paddle.compat.nn.Linear(head_dim, head_dim)
 
     def forward(self, x: torch.Tensor):
         return self.layer1(x) * self.layer2(x)
@@ -135,9 +134,8 @@ class LearnableOuterProductFeatureMap(nn.Module):
         feature_dim: int,
     ) -> LearnableOuterProductFeatureMap:
         super().__init__()
-        # Trainable map
-        self.layer1 = nn.Linear(head_dim, feature_dim, bias=False)
-        self.layer2 = nn.Linear(head_dim, feature_dim, bias=False)
+        self.layer1 = paddle.compat.nn.Linear(head_dim, feature_dim, bias=False)
+        self.layer2 = paddle.compat.nn.Linear(head_dim, feature_dim, bias=False)
         self.normalizer = feature_dim ** -0.5
 
     def forward(self, x: torch.Tensor):
@@ -162,15 +160,13 @@ class LearnablePolySketchNonNegativeFeatureMap(nn.Module):
 
         self.gamma = nn.Parameter(torch.ones(head_dim))
         self.beta = nn.Parameter(torch.zeros(head_dim))
-        # NOTE: the sketch layers defined here are quite different from the original paper
-        # currently we simply use linear layers without any non-linear activations
         self.sketches1 = nn.ModuleList([
-            nn.Linear(head_dim, sketch_size, bias=False),
-            *[nn.Linear(sketch_size, sketch_size, bias=False) for _ in range(int(math.log2(self.degree)) - 2)],
+            paddle.compat.nn.Linear(head_dim, sketch_size, bias=False),
+            *[paddle.compat.nn.Linear(sketch_size, sketch_size, bias=False) for _ in range(int(math.log2(self.degree)) - 2)]
         ])
         self.sketches2 = nn.ModuleList([
-            nn.Linear(head_dim, sketch_size, bias=False),
-            *[nn.Linear(sketch_size, sketch_size, bias=False) for _ in range(int(math.log2(self.degree)) - 2)],
+            paddle.compat.nn.Linear(head_dim, sketch_size, bias=False), 
+            *[paddle.compat.nn.Linear(sketch_size, sketch_size, bias=False) for _ in range(int(math.log2(self.degree)) - 2)]
         ])
 
     def forward(self, x: torch.Tensor):
@@ -230,7 +226,7 @@ class RebasedFeatureMap(nn.Module):
         elif self.normalize:
             x = F.layer_norm(x, (self.head_dim,), self.gamma, self.beta)
         elif self.use_gamma and self.use_beta:
-            x = torch.addcmul(self.beta, x, self.gamma)
+            x = paddle.add(self.beta, 1 * x * self.gamma)
         elif self.use_gamma:
             x = x.mul(self.gamma)
         else:

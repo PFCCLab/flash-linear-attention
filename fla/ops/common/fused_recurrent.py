@@ -515,7 +515,7 @@ class FusedRecurrentFunction(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dht):
-        q, k, v, g, g_gamma, gk, gv, initial_state, o = ctx.saved_tensors
+        q, k, v, g, g_gamma, gk, gv, initial_state, o = ctx.saved_tensor()
         dq, dk, dv, dg, dgk, dgv, dh0 = fused_recurrent_bwd(
             q=q,
             k=k,

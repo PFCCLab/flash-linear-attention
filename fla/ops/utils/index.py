@@ -1,8 +1,7 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
-
+import paddle
 import torch
-import torch.nn.functional as F
 import triton
 import triton.language as tl
 
@@ -48,7 +47,7 @@ def prepare_cu_seqlens_from_lens(
     lens: torch.LongTensor,
     dtype: torch.dtype | None = torch.int32,
 ) -> torch.LongTensor:
-    return F.pad(lens.cumsum(dim=0, dtype=dtype), (1, 0))
+    return paddle.compat.nn.functional.pad(lens.cumsum(dim=0, dtype=dtype), (1, 0))
 
 
 @tensor_cache
@@ -66,8 +65,7 @@ def prepare_split_cu_seqlens(
     split_size: int,
     cu_seqlens: torch.LongTensor | None = None,
     dtype: torch.dtype | None = torch.int32,
-    device: torch.device | None = torch.device('cpu'),
-) -> torch.LongTensor:
+    device=paddle.device('cpu'),) -> torch.LongTensor:
     if cu_seqlens is None:
         total_tokens = batch_size * seq_len
         cu_seqlens = list(range(0, total_tokens, seq_len)) + [total_tokens]
@@ -127,7 +125,8 @@ def prepare_chunk_offsets(
     cu_seqlens: torch.LongTensor,
     chunk_size: int,
 ) -> torch.LongTensor:
-    return F.pad(triton.cdiv(prepare_lens(cu_seqlens), chunk_size), (1, 0), value=0).cumsum(-1)
+    return paddle.compat.nn.functional.pad(triton.cdiv(prepare_lens(
+        cu_seqlens), chunk_size), (1, 0), value=0).cumsum(-1)
 
 
 @tensor_cache

@@ -1,15 +1,16 @@
 from __future__ import annotations
+import logging
 
 import math
 import warnings
 from typing import TYPE_CHECKING, Any
 
+import paddle
+import paddleformers
 import torch
 import torch.nn as nn
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
-from transformers.utils.deprecation import deprecate_kwarg
+
+from paddleformers.transformers.model_outputs import CausalLMOutputWithPast
 
 from fla.layers.bitattn import BitAttention
 from fla.models.bitnet.configuration_bitnet import BitNetConfig
@@ -19,8 +20,10 @@ from fla.modules.activations import swiglu
 from fla.modules.fused_bitlinear import FusedBitLinear
 from fla.modules.l2warp import l2_warp
 
+from ...paddle_utils import *
+
 if TYPE_CHECKING:
-    from transformers.processing_utils import Unpack
+    from paddleformers.transformers.processing_utils import Unpack
 
 
 try:
@@ -28,7 +31,7 @@ try:
 except ImportError:
     from fla.models.modeling_layers import GradientCheckpointingLayer
 
-logger = logging.get_logger(__name__)
+logger = logging.getLogger(name=__name__)
 
 
 class BitNetMLP(nn.Module):
@@ -59,9 +62,9 @@ class BitNetMLP(nn.Module):
         if hidden_act != 'swish':
             raise ValueError(f'Unsupported hidden_act: {hidden_act}')
 
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
+        self.gate_proj = paddle.compat.nn.Linear(self.hidden_size, self.ntermediate_size, bias=False)
+        self.up_proj = paddle.compat.nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.down_proj = paddle.compat.nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
 
     def forward(
         self,
@@ -70,9 +73,9 @@ class BitNetMLP(nn.Module):
     ) -> torch.Tensor:
         gate, y = self.gate_proj(x), self.up_proj(x)
         return self.down_proj(swiglu(gate, y))
-
-
 class BitNetBlock(GradientCheckpointingLayer):
+
+
 
     def __init__(self, config: BitNetConfig, layer_idx: int):
         super().__init__()
@@ -140,7 +143,7 @@ class BitNetBlock(GradientCheckpointingLayer):
         return outputs
 
 
-class BitNetPreTrainedModel(PreTrainedModel):
+class BitNetPreTrainedModel(paddleformers.transformers.PretrainedModel):
 
     config_class = BitNetConfig
     base_model_prefix = 'model'
@@ -157,7 +160,7 @@ class BitNetPreTrainedModel(PreTrainedModel):
         rescale_prenorm_residual: bool = False,
         num_residuals_per_layer: int = 2,
     ):
-        if isinstance(module, (nn.Linear, FusedBitLinear, nn.Conv1d)):
+        if isinstance(module, (paddle.compat.nn.Linear, FusedBitLinear, nn.Conv1d)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             nn.init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
@@ -275,8 +278,8 @@ class BitNetModel(BitNetPreTrainedModel):
 
             if output_attentions:
                 all_attns += (layer_outputs[1],)
-
         hidden_states = self.norm(hidden_states)
+
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
@@ -285,7 +288,7 @@ class BitNetModel(BitNetPreTrainedModel):
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_attns] if v is not None)
 
-        return BaseModelOutputWithPast(
+        return paddleformers.transformers.model_outputs.BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
@@ -301,7 +304,7 @@ class BitNetForCausalLM(BitNetPreTrainedModel, FLAGenerationMixin):
         super().__init__(config)
         self.model = BitNetModel(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = paddle.compat.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.criterion = None
 
         # Initialize weights and apply final processing
@@ -325,7 +328,6 @@ class BitNetForCausalLM(BitNetPreTrainedModel, FLAGenerationMixin):
     def get_decoder(self):
         return self.model
 
-    @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -370,7 +372,7 @@ class BitNetForCausalLM(BitNetPreTrainedModel, FLAGenerationMixin):
                 elif self.config.fuse_cross_entropy:
                     criterion = FusedCrossEntropyLoss(inplace_backward=True)
                 else:
-                    criterion = nn.CrossEntropyLoss()
+                    criterion = paddle.nn.CrossEntropyLoss()
             else:
                 criterion = self.criterion
 
@@ -379,14 +381,14 @@ class BitNetForCausalLM(BitNetPreTrainedModel, FLAGenerationMixin):
             if self.config.fuse_linear_cross_entropy:
                 loss = criterion(hidden_states, labels, self.lm_head.weight, self.lm_head.bias)
             else:
-                loss = criterion(logits.view(labels.numel(), -1), labels.view(-1))
+                loss = criterion(logits.view(labels.size, -1), labels.view(-1))
                 loss = l2_warp(loss, logits) if self.config.use_l2warp else loss
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        return paddleformers.transformers.model_outputs.CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,

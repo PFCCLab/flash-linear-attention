@@ -423,7 +423,6 @@ class ChunkGeneralizedIPLRDeltaRuleFunction(torch.autograd.Function):
         )
 
 
-@torch.compiler.disable
 def chunk_iplr_delta_rule(
     q: torch.Tensor,
     k: torch.Tensor,

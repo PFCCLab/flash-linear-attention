@@ -2,12 +2,12 @@
 
 import warnings
 
+import paddle
 import torch
 
 from fla.ops.simple_gla.chunk import chunk_simple_gla
 
 
-@torch.compiler.disable
 def chunk_lightning_attn(
     q: torch.Tensor,
     k: torch.Tensor,
@@ -68,7 +68,7 @@ def chunk_lightning_attn(
         )
 
     H = q.shape[2]
-    g_gamma = -(8 / H * (1 - layer_idx / num_layers)) * q.new_tensor(range(H), dtype=torch.float)
+    g_gamma = -(8 / H * (1 - layer_idx / num_layers)) * paddle.to_tensor(data=range(H), dtype=torch.float)
     return chunk_simple_gla(
         q=q,
         k=k,

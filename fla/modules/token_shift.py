@@ -1,5 +1,6 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
+import paddle
 import torch
 import triton
 import triton.language as tl
@@ -361,7 +362,7 @@ def token_shift_bwd_kernel_long(
 
 @tensor_cache
 def prepare_maxlens(cu_seqlens: torch.LongTensor) -> int:
-    return torch.max(cu_seqlens.diff()).item()
+    return paddle.compat.max(cu_seqlens.diff()).item()
 
 
 def token_shift_fwd(
@@ -464,7 +465,7 @@ def token_shift_bwd(
             BD=BD,
         )
     else:
-        BT = min(64, triton.next_power_of_2(triton.cdiv(max(16, dy.numel() // D),
+        BT = min(64, triton.next_power_of_2(triton.cdiv(max(16, dy.size // D),
                                                         get_multiprocessor_count(dy.device.index))))
         if chunk_indices is None and cu_seqlens is not None:
             chunk_indices = prepare_chunk_indices(cu_seqlens, BT)

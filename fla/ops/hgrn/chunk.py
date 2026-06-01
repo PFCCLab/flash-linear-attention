@@ -245,7 +245,7 @@ class ChunkHGRNFunction(torch.autograd.Function):
     @staticmethod
     @input_guard
     def backward(ctx, do, dht=None):
-        g, o, initial_state = ctx.saved_tensors
+        g, o, initial_state = ctx.saved_tensor()
         B, T, D = do.shape
         BT, BD = 128, min(64, triton.next_power_of_2(D))
         num_warps = 8 if BD == 64 else 4
@@ -272,7 +272,6 @@ class ChunkHGRNFunction(torch.autograd.Function):
         return dx.to(o.dtype), dg, None, None
 
 
-@torch.compiler.disable
 def chunk_hgrn(
     x: torch.Tensor,
     g: torch.Tensor,

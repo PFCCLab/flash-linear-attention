@@ -238,7 +238,7 @@ class GateOutputCorrection(torch.autograd.Function):
     @autocast_custom_bwd
     @input_guard
     def backward(ctx, grad_output):
-        o, r, k, r_k, v, g = ctx.saved_tensors
+        o, r, k, r_k, v, g = ctx.saved_tensor()
         return gate_output_correction_backward_triton(grad_output, o, r, k, r_k, v, g)
 
 

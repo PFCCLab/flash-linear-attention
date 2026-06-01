@@ -1,7 +1,7 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang, Yuqi Pan
 
+import paddle
 import torch
-import torch.nn.functional as F
 
 
 def ttt_linear(
@@ -98,10 +98,10 @@ def chunk_ttt_linear_ref(
     T = q.shape[-2]
     padded = (mini_batch_size - (T % mini_batch_size)) % mini_batch_size
     if padded > 0:
-        q = F.pad(q, (0, 0, 0, padded))
-        k = F.pad(k, (0, 0, 0, padded))
-        v = F.pad(v, (0, 0, 0, padded))
-        eta = F.pad(eta, (0, 0, 0, padded))
+        q = paddle.compat.nn.functional.pad(q, (0, 0, 0, padded))
+        k = paddle.compat.nn.functional.pad(k, (0, 0, 0, padded))
+        v = paddle.compat.nn.functional.pad(v, (0, 0, 0, padded))
+        eta = paddle.compat.nn.functional.pad(eta, (0, 0, 0, padded))
         eta[:, :, -1, :] = eta[:, :, -(padded+1), :]
     assert q.shape[-2] % mini_batch_size == 0, "Sequence length should be a multiple of mini_batch_size."
     q, k, v, eta, w, b = map(lambda x: x.to(torch.float32), [q, k, v, eta, w, b])

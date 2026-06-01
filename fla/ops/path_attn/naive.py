@@ -1,7 +1,7 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 
+import paddle
 import torch
-import torch.nn.functional as F
 from einops import rearrange
 
 
@@ -48,8 +48,8 @@ def naive_path_attn(
     b, h, l, _ = q.shape
     if l % BT != 0:
         padding_size = BT - l % BT
-        q, k, w = map(lambda x: F.pad(x, (0, 0, 0, padding_size)), [q, k, w])
-        beta = F.pad(beta, (0, padding_size))
+        q, k, w = map(lambda x: paddle.compat.nn.functional.pad(x, (0, 0, 0, padding_size)), [q, k, w])
+        beta = paddle.compat.nn.functional.pad(beta, (0, padding_size))
 
     seq_len = q.shape[2]
     w_beta = w * beta[..., None]

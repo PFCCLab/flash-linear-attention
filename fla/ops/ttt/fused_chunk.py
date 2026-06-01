@@ -692,7 +692,7 @@ class FusedChunkTTTLinearFunction(torch.autograd.Function):
     @input_guard
     @autocast_custom_bwd
     def backward(ctx, do, dht, dhbt):
-        q, k, v, eta, w, b, initial_state, initial_state_bias = ctx.saved_tensors
+        q, k, v, eta, w, b, initial_state, initial_state_bias = ctx.saved_tensor()
         dq, dk, dv, de, dw, db, dh0, dhb0 = fused_chunk_ttt_linear_bwd(
             q=q,
             k=k,
