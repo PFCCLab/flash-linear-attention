@@ -5,6 +5,8 @@
 # For a list of all contributors, visit:
 #   https://github.com/fla-org/flash-linear-attention/graphs/contributors
 
+from . import cp as _cp
+from . import triton as _triton
 from .causal_conv1d import causal_conv1d
 from .long_conv import ImplicitLongConvolution, LongConvolution, PositionalEmbedding, fft_conv
 from .short_conv import ShortConvolution

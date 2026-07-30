@@ -10,4 +10,6 @@ from pkgutil import extend_path
 __path__ = extend_path(__path__, __name__)
 __version__ = "0.5.2"
 
-__all__: list[str] = []
+from fla import modules, ops  # noqa: E402
+
+__all__ = ["modules", "ops"]

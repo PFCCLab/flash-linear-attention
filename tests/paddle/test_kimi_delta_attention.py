@@ -14,6 +14,10 @@ import pytest
 
 paddle.enable_compat(scope={"fla", "triton"}, silent=True)
 
+import fla  # noqa: E402
+
+paddle.disable_compat()
+
 from fla.modules import FusedRMSNormGated, ShortConvolution  # noqa: E402
 from fla.ops.kda import chunk_kda  # noqa: E402
 from fla.ops.utils.index import prepare_cu_seqlens_from_mask, prepare_lens_from_mask  # noqa: E402
@@ -138,19 +142,32 @@ import paddle
 
 paddle.enable_compat(scope={"fla", "triton"}, silent=True)
 
+import fla
+
+paddle.disable_compat()
+
 from fla.modules import FusedRMSNormGated, ShortConvolution
 from fla.modules.backends import dispatch as modules_dispatch
 from fla.ops.backends import dispatch as ops_dispatch
+from fla.ops.kda import chunk_kda
+from fla.ops.utils.index import prepare_cu_seqlens_from_mask, prepare_lens_from_mask
+from fla.utils import tensor_cache
 
 assert FusedRMSNormGated is not None
 assert ShortConvolution is not None
 assert modules_dispatch is ops_dispatch
-assert "fla.ops.kda" not in sys.modules
-assert not hasattr(sys.modules["fla.ops"], "chunk_kda")
-
-from fla.ops.kda import chunk_kda
-
 assert callable(chunk_kda)
+assert callable(prepare_cu_seqlens_from_mask)
+assert callable(prepare_lens_from_mask)
+assert callable(tensor_cache)
+assert fla.modules is sys.modules["fla.modules"]
+assert fla.modules.conv.cp is sys.modules["fla.modules.conv.cp"]
+assert fla.modules.conv.triton is sys.modules["fla.modules.conv.triton"]
+assert fla.ops is sys.modules["fla.ops"]
+assert fla.ops.cp is sys.modules["fla.ops.cp"]
+assert fla.ops.kda is sys.modules["fla.ops.kda"]
+assert fla.ops.kda.chunk_kda is chunk_kda
+assert fla.ops.utils is sys.modules["fla.ops.utils"]
 assert "fla.ops.kda" in sys.modules
 """,
         ],
@@ -158,6 +175,14 @@ assert "fla.ops.kda" in sys.modules
         text=True,
     )
     assert result.returncode == 0, result.stderr
+    assert fla.modules is sys.modules["fla.modules"]
+    assert fla.modules.conv.cp is sys.modules["fla.modules.conv.cp"]
+    assert fla.modules.conv.triton is sys.modules["fla.modules.conv.triton"]
+    assert fla.ops is sys.modules["fla.ops"]
+    assert fla.ops.cp is sys.modules["fla.ops.cp"]
+    assert fla.ops.kda is sys.modules["fla.ops.kda"]
+    assert fla.ops.kda.chunk_kda is chunk_kda
+    assert fla.ops.utils is sys.modules["fla.ops.utils"]
     assert ShortConvolution.__module__ == "fla.modules.conv.short_conv"
     assert FusedRMSNormGated.__module__ == "fla.modules.fused_norm_gate"
     assert callable(chunk_kda)

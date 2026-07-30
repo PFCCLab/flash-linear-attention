@@ -10,15 +10,24 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import threading
 from collections.abc import Callable
-from functools import cache
-from typing import ClassVar, TypeVar
+from functools import cache, wraps
+from typing import Any, ClassVar, TypeVar
+
+import torch
 
 from fla.utils import find_spec_cached
 
+logger = logging.getLogger(__name__)
 F = TypeVar('F', bound=Callable)
+
+
+_DISPATCH_DISABLED = os.environ.get("FLA_DISABLE_BACKEND_DISPATCH") == "1"
+if _DISPATCH_DISABLED:
+    logger.info("[FLA Backend] FLA_DISABLE_BACKEND_DISPATCH=1 — all dispatch bypassed")
 
 
 class BaseBackend:
@@ -149,25 +158,67 @@ class BackendRegistry:
 
 
 def dispatch(operation: str):
-    """Return the default implementation without optional backend routing.
+    """Dispatch decorator with verifier support.
 
-    This branch supports KDA training on NVIDIA GPUs through the default Triton implementation.
-    The optional KDA backends are:
-
-    - TileLang is deferred for now.
-      TODO: consider supporting it if performance is better than the Triton implementation.
-    - FlashKDA, which is inference-only and has no training backward.
-    - Triton-Ascend, which only targets Huawei NPUs.
-
-    The module registry similarly contains only Triton-Ascend overrides.
-    None of these backends are currently required for the supported CUDA training paths.
-    Those paths include dense and variable-length forward/backward and context parallelism.
-    Loading them would only expand the unsupported dependency and import surface.
-
-    The upstream dispatch wrapper depends on ``torch.compiler.disable``, which Paddle compat does not provide.
+    Iterates through all registered backends and selects the first one
+    that passes the verifier for the given function call.
     """
     def decorator(func: F) -> F:
         return func
+
+        if _DISPATCH_DISABLED:
+            return func
+        func_name = func.__name__
+
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            # Lazy initialization of backends
+            BackendRegistry.ensure_initialized(operation)
+
+            registry = BackendRegistry._registries.get(operation)
+            if registry is None:
+                return func(*args, **kwargs)
+
+            # Iterate through all registered backends sorted by priority
+            # to find one that can handle this call
+            backends_list = registry._get_sorted_backends()
+
+            for be in backends_list:
+                # Avoid be.can_use(): its @cache wrapper breaks torch.compile tracing.
+                if not (be.is_available() and be.is_enabled()):
+                    continue
+
+                can_use, reason = be.verify(func_name, *args, **kwargs)
+                if not can_use:
+                    fail_key = f"{operation}:{func_name}:{be.backend_type}:fail"
+                    if fail_key not in registry._logged:
+                        registry._logged.add(fail_key)
+                        logger.info(
+                            f"[FLA Backend] {operation}.{func_name} -> {be.backend_type} "
+                            f"rejected: {reason}"
+                        )
+                    continue
+
+                impl = getattr(be, func_name, None)
+                if impl is None:
+                    continue
+
+                result = impl(*args, **kwargs)
+
+                log_key = f"{operation}:{func_name}:{be.backend_type}"
+                if log_key not in registry._logged:
+                    registry._logged.add(log_key)
+                    logger.info(f"[FLA Backend] {operation}.{func_name} -> {be.backend_type}")
+
+                return result
+
+            # No backend can handle this call, use default implementation
+            return func(*args, **kwargs)
+
+        # Dispatch performs runtime backend selection; keep it out of torch.compile graphs.
+        wrapper = torch.compiler.disable(wrapper)
+
+        return wrapper
     return decorator
 
 
