@@ -72,7 +72,7 @@ def prepare_split_cu_seqlens(
     split_size: int | None = None,
     cu_seqlens: torch.LongTensor | None = None,
     dtype: torch.dtype | None = torch.int32,
-    device: torch.device | None = torch.device('cpu'),
+    device: "torch.device | None" = torch.device('cpu'),
 ) -> torch.LongTensor:
     """Sub-split a (optionally packed) batch along the token axis.
 

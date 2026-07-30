@@ -574,7 +574,7 @@ def _get_o_mix(
     logit: torch.Tensor,
     lse: torch.Tensor,
     scale: float,
-    device: torch.device,
+    device: "torch.device",
     chunks: Iterable[tuple[int, int, torch.Tensor, int, int, int]] | None = None,
 ) -> torch.Tensor:
     o_mix = torch.zeros(*sources[0].shape, device=device, dtype=torch.float32)

@@ -302,7 +302,7 @@ def intracard_merge(
     num_non_first: int,
     merge_seq_offsets: list[int],
     merge_init_offsets: list[int],
-    device: torch.device,
+    device: "torch.device",
     initial_state: torch.Tensor | None = None,
     state_v_first: bool = False,
     use_tf32x3_affine_chain: bool = False,

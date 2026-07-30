@@ -980,7 +980,7 @@ class LayerNorm(nn.Module):
         elementwise_affine: bool = True,
         bias: bool = False,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> LayerNorm:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1035,7 +1035,7 @@ class GroupNorm(nn.Module):
         bias: bool = False,
         eps: float = 1e-5,
         is_rms_norm: bool = False,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> GroupNorm:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1097,7 +1097,7 @@ class RMSNorm(nn.Module):
         elementwise_affine: bool = True,
         bias: bool = False,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> RMSNorm:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1255,7 +1255,7 @@ class LayerNormLinear(nn.Module):
         elementwise_affine: bool = True,
         bias: bool = False,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> LayerNormLinear:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1313,7 +1313,7 @@ class GroupNormLinear(nn.Module):
         bias: bool = False,
         eps: float = 1e-5,
         is_rms_norm: bool = False,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> GroupNormLinear:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1377,7 +1377,7 @@ class RMSNormLinear(nn.Module):
         elementwise_affine: bool = True,
         bias: bool = False,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> RMSNormLinear:
         factory_kwargs = {"device": device, "dtype": dtype}

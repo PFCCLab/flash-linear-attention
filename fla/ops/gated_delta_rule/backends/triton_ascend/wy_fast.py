@@ -53,7 +53,7 @@ def _beta_npu_arg(beta: torch.Tensor, HV: int) -> tuple[torch.Tensor, bool]:
 
 
 def _t_npu_buf(
-    B: int, T: int, HV: int, *, dtype: torch.dtype, device: torch.device,
+    B: int, T: int, HV: int, *, dtype: torch.dtype, device: "torch.device",
 ) -> tuple[torch.Tensor, bool]:
     if HV == 1:
         return torch.empty(B, T, HV, dtype=dtype, device=device), False
