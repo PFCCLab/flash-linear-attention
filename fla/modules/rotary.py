@@ -342,7 +342,7 @@ class RotaryEmbedding(nn.Module):
         scale_base: float | None = None,
         interleaved: bool = False,
         pos_idx_in_fp32: bool = True,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
     ):
         """
         interleaved:

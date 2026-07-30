@@ -20,7 +20,7 @@ from fla.utils import checkpoint
 
 
 @functools.cache
-def _triu_indices(n: int, offset: int, device: torch.device) -> torch.Tensor:
+def _triu_indices(n: int, offset: int, device: "torch.device") -> torch.Tensor:
     # cache the upper-triangular gather indices per (size, offset, device) to avoid rebuilding
     # them and copying host -> device on every forward
     return torch.triu_indices(n, n, offset, device=device)

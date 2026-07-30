@@ -62,7 +62,7 @@ class ShortConvolution(nn.Conv1d):
         bias: bool = False,
         activation: str | None = 'silu',
         backend: str | None = 'triton',
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
         **kwargs,
     ):
