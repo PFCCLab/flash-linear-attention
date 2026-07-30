@@ -164,6 +164,8 @@ def dispatch(operation: str):
     that passes the verifier for the given function call.
     """
     def decorator(func: F) -> F:
+        return func
+
         if _DISPATCH_DISABLED:
             return func
         func_name = func.__name__

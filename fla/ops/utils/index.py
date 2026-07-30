@@ -5,6 +5,8 @@
 # For a list of all contributors, visit:
 #   https://github.com/fla-org/flash-linear-attention/graphs/contributors
 
+from __future__ import annotations
+
 import torch
 import torch.nn.functional as F
 import triton
@@ -126,10 +128,10 @@ def _segmented_arange(counts: torch.LongTensor) -> tuple[torch.LongTensor, torch
     host (one device sync). Pass host-side counts to avoid it.
     """
     seg_id = torch.repeat_interleave(
-        torch.arange(counts.numel(), device=counts.device, dtype=counts.dtype),
+        torch.arange(counts.shape.numel(), device=counts.device, dtype=counts.dtype),
         counts,
-    )
-    seg_start = F.pad(counts.cumsum(0), (1, 0))[:-1]
+    ).to(counts.dtype)
+    seg_start = F.pad(counts.cumsum(0), (1, 0))[:-1].to(counts.dtype)
     intra_idx = torch.arange(seg_id.shape[0], device=counts.device, dtype=counts.dtype) - seg_start[seg_id]
     return seg_id, intra_idx
 
@@ -159,7 +161,7 @@ def prepare_chunk_indices(
     cu_seqlens_cpu: torch.LongTensor | None = None,
 ) -> torch.LongTensor:
     src = cu_seqlens_cpu if cu_seqlens_cpu is not None else cu_seqlens
-    chunk_counts = (prepare_lens(src) + (chunk_size - 1)).div(chunk_size, rounding_mode='floor')
+    chunk_counts = (prepare_lens(src) + (chunk_size - 1)) // chunk_size
     seg_id, intra_chunk_idx = _segmented_arange(chunk_counts)
     return torch.stack([seg_id, intra_chunk_idx], 1).to(cu_seqlens)
 
