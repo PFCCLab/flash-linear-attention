@@ -933,7 +933,7 @@ class FusedLayerNormGated(nn.Module):
         bias: bool = False,
         activation: str = "swish",
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedLayerNormGated:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -999,7 +999,7 @@ class FusedRMSNormGated(nn.Module):
         elementwise_affine: bool = True,
         eps: float = 1e-5,
         activation: str = "swish",
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedRMSNormGated:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1062,7 +1062,7 @@ class FusedLayerNormSwishGate(FusedLayerNormGated):
         elementwise_affine: bool = True,
         bias: bool = False,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedLayerNormSwishGate:
         super().__init__(
@@ -1081,7 +1081,7 @@ class FusedRMSNormSwishGate(FusedRMSNormGated):
         hidden_size: int,
         elementwise_affine: bool = True,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedRMSNormSwishGate:
         super().__init__(
@@ -1099,7 +1099,7 @@ class FusedLayerNormGatedLinear(nn.Module):
         hidden_size: int,
         elementwise_affine: bool = True,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedLayerNormGatedLinear:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1159,7 +1159,7 @@ class FusedLayerNormSwishGateLinear(FusedLayerNormGatedLinear):
         hidden_size: int,
         elementwise_affine: bool = True,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedLayerNormSwishGateLinear:
         super().__init__(
@@ -1177,7 +1177,7 @@ class FusedRMSNormGatedLinear(nn.Module):
         hidden_size,
         elementwise_affine: bool = True,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedRMSNormGatedLinear:
         factory_kwargs = {"device": device, "dtype": dtype}
@@ -1236,7 +1236,7 @@ class FusedRMSNormSwishGateLinear(FusedRMSNormGatedLinear):
         hidden_size: int,
         elementwise_affine: bool = True,
         eps: float = 1e-5,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> FusedRMSNormSwishGateLinear:
         super().__init__(

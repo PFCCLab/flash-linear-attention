@@ -81,7 +81,7 @@ class Mamba3(nn.Module):
         use_bias: bool = False,
         norm_eps: float = 1e-5,
         layer_idx: int | None = None,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ) -> Mamba3:
         super().__init__()
@@ -449,7 +449,7 @@ class Mamba3(nn.Module):
         self,
         batch_size: int,
         max_seqlen: int,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ):
         device = device or self.in_proj.weight.device

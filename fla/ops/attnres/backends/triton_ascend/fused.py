@@ -388,7 +388,7 @@ def _get_o_mix(
     logit: torch.Tensor,
     lse: torch.Tensor,
     scale: float,
-    device: torch.device,
+    device: "torch.device",
     o_pre: torch.Tensor | None = None,
     o_mix: torch.Tensor | None = None,
 ) -> torch.Tensor:

@@ -475,7 +475,7 @@ class LayerNormGated(nn.Module):
         eps: float = 1e-5,
         group_size: int | None = None,
         norm_before_gate: bool = True,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ):
         """If group_size is not None, we do GroupNorm with each group having group_size elements.
@@ -510,7 +510,7 @@ class RMSNormGated(nn.Module):
         eps: float = 1e-5,
         group_size: int | None = None,
         norm_before_gate: bool = False,
-        device: torch.device | None = None,
+        device: "torch.device | None" = None,
         dtype: torch.dtype | None = None,
     ):
         """If group_size is not None, we do GroupNorm with each group having group_size elements.
