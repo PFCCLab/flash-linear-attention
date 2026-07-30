@@ -5,8 +5,10 @@
 # For a list of all contributors, visit:
 #   https://github.com/fla-org/flash-linear-attention/graphs/contributors
 
+import builtins
 import subprocess
 import sys
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import paddle
@@ -19,9 +21,33 @@ import fla  # noqa: E402
 paddle.disable_compat()
 
 from fla.modules import FusedRMSNormGated, ShortConvolution  # noqa: E402
+from fla.ops.cp import FLACPContext  # noqa: E402
 from fla.ops.kda import chunk_kda  # noqa: E402
 from fla.ops.utils.index import prepare_cu_seqlens_from_mask, prepare_lens_from_mask  # noqa: E402
 from fla.utils import tensor_cache  # noqa: E402
+
+
+@contextmanager
+def _assert_no_fla_runtime_imports():
+    loaded_modules = {name for name in sys.modules if name == "fla" or name.startswith("fla.")}
+    runtime_imports = []
+    original_import = builtins.__import__
+
+    def monitored_import(name, globals_=None, locals_=None, fromlist=(), level=0):
+        caller = globals_.get("__name__", "") if globals_ else ""
+        if caller == "fla" or caller.startswith("fla."):
+            runtime_imports.append((caller, name, tuple(fromlist or ()), level))
+        return original_import(name, globals_, locals_, fromlist, level)
+
+    builtins.__import__ = monitored_import
+    try:
+        yield
+    finally:
+        builtins.__import__ = original_import
+
+    assert runtime_imports == []
+    current_modules = {name for name in sys.modules if name == "fla" or name.startswith("fla.")}
+    assert current_modules == loaded_modules
 
 
 @tensor_cache
@@ -249,6 +275,32 @@ def test_fused_rms_norm_gated_forward_backward():
     paddle.testing.assert_close(layer.weight.grad, weight_ref.grad, rtol=1e-5, atol=1e-5)
 
 
+def test_short_convolution_cp_forward_backward_uses_eager_imports():
+    paddle.seed(42)
+    conv = ShortConvolution(64, 4, activation="silu")
+    x = paddle.randn([1, 32, 64], dtype="float32")
+    x.stop_gradient = False
+    cu_seqlens = paddle.to_tensor([0, 32], dtype="int32")
+    cp_context = FLACPContext(
+        cu_seqlens=cu_seqlens,
+        cu_seqlens_cpu=paddle.to_tensor([0, 32], dtype="int32", place=paddle.CPUPlace()),
+        is_first_rank=True,
+        conv1d_kernel_size=4,
+        pre_num_conv_tokens=0,
+    )
+
+    with _assert_no_fla_runtime_imports():
+        output, final_state = conv(x, cp_context=cp_context)
+        output.square().mean().backward()
+
+    assert final_state is None
+    assert paddle.isfinite(output).all().item()
+    assert x.grad is not None
+    assert paddle.isfinite(x.grad).all().item()
+    assert conv.weight.grad is not None
+    assert paddle.isfinite(conv.weight.grad).all().item()
+
+
 @pytest.mark.parametrize("use_padding_mask", [False, True])
 def test_kimi_delta_attention_training_forward_backward(use_padding_mask: bool):
     paddle.seed(42)
@@ -262,17 +314,18 @@ def test_kimi_delta_attention_training_forward_backward(use_padding_mask: bool):
             "gate_lower_bound": -5.0,
         },
     )
-    layer = _KimiDeltaAttentionTrainingHarness(config)
-    hidden_states = paddle.randn([2 if use_padding_mask else 1, 64, 128], dtype="float32")
-    hidden_states.stop_gradient = False
-    attention_mask = None
-    if use_padding_mask:
-        attention_mask = paddle.to_tensor([[1] * 53 + [0] * 11, [1] * 64], dtype="bool")
+    with _assert_no_fla_runtime_imports():
+        layer = _KimiDeltaAttentionTrainingHarness(config)
+        hidden_states = paddle.randn([2 if use_padding_mask else 1, 64, 128], dtype="float32")
+        hidden_states.stop_gradient = False
+        attention_mask = None
+        if use_padding_mask:
+            attention_mask = paddle.to_tensor([[1] * 53 + [0] * 11, [1] * 64], dtype="bool")
 
-    with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
-        output = layer(hidden_states, attention_mask)
-        loss = output.astype("float32").square().mean()
-    loss.backward()
+        with paddle.amp.auto_cast(enable=True, dtype="bfloat16"):
+            output = layer(hidden_states, attention_mask)
+            loss = output.astype("float32").square().mean()
+        loss.backward()
 
     assert output.shape == hidden_states.shape
     assert paddle.isfinite(output).all().item()
