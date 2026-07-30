@@ -7,11 +7,8 @@
 
 """Module-level backends for FLA components such as rotary and cross-entropy."""
 
-from fla.modules.backends.triton_ascend import TritonAscendBackend
-from fla.ops.backends import BackendRegistry, dispatch
+from fla.ops.backends import dispatch
 
-modules_registry = BackendRegistry("modules")
-
-modules_registry.register(TritonAscendBackend())
+modules_registry = None
 
 __all__ = ['dispatch', 'modules_registry']

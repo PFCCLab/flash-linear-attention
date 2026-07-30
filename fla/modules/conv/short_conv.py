@@ -7,6 +7,8 @@
 
 """Short convolution implementation for efficient causal convolutions."""
 
+from __future__ import annotations
+
 import warnings
 
 import torch

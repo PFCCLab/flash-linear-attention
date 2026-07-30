@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import paddle
 import torch
 import torch.distributed as dist
 
@@ -90,11 +91,14 @@ def get_cp_cu_seqlens(
     # Optimization: cu_seqlens is sorted, use searchsorted to quickly locate boundaries
     # Find first sequence whose end > rank_start
     # cu_seqlens_cpu[1:] contains all sequence end points
-    start_seq_idx = torch.searchsorted(cu_seqlens_cpu[1:], rank_start, side='right')
+    # TODO: avoid scalar tensor allocations once paddle.searchsorted accepts Python scalar values.
+    rank_start_tensor = paddle.to_tensor(rank_start, dtype=cu_seqlens_cpu.dtype, place=cu_seqlens_cpu.place)
+    rank_end_tensor = paddle.to_tensor(rank_end, dtype=cu_seqlens_cpu.dtype, place=cu_seqlens_cpu.place)
+    start_seq_idx = paddle.searchsorted(cu_seqlens_cpu[1:], rank_start_tensor, side='right').item()
 
     # Find first sequence whose start >= rank_end, sequences before this may overlap
     # cu_seqlens_cpu[:-1] contains all sequence start points
-    end_seq_idx = torch.searchsorted(cu_seqlens_cpu[:-1], rank_end, side='left')
+    end_seq_idx = paddle.searchsorted(cu_seqlens_cpu[:-1], rank_end_tensor, side='left').item()
 
     # Slice cu_seqlens_cpu[start_seq_idx : end_seq_idx + 1] to get relevant global cu_seqlens nodes
     # +1 because end_seq_idx is an open boundary, and cu_seqlens length is num_seqs + 1

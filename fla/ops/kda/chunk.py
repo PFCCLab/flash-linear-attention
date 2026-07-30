@@ -9,6 +9,7 @@
 
 import warnings
 
+import paddle
 import torch
 
 from fla.modules.l2norm import l2norm_bwd, l2norm_fwd
@@ -51,6 +52,11 @@ class ChunkKDAFunction(torch.autograd.Function):
         return_intermediate_states: bool = False,
         cp_context: FLACPContext | None = None,
     ):
+        ctx.has_A_log = A_log is not None
+        ctx.has_dt_bias = dt_bias is not None
+        ctx.has_initial_state = initial_state is not None
+        ctx.has_cu_seqlens = cu_seqlens is not None
+        ctx.has_cu_seqlens_cpu = cu_seqlens_cpu is not None
         # Apply l2norm
         q_rstd, k_rstd = None, None
         if use_qk_l2norm_in_kernel:
@@ -96,7 +102,7 @@ class ChunkKDAFunction(torch.autograd.Function):
         )
 
         if return_intermediate_states:
-            assert torch.is_inference_mode_enabled(), "return_intermediate_states is only allowed in inference mode"
+            assert not paddle.is_grad_enabled(), "return_intermediate_states is only allowed in inference mode"
             assert disable_recompute is False, "return_intermediate_states must be used with disable_recompute=False"
             return o.type_as(q), final_state, h
 
@@ -124,7 +130,7 @@ class ChunkKDAFunction(torch.autograd.Function):
     def backward(
         ctx,
         do: torch.Tensor,
-        dht: torch.Tensor,
+        dht: torch.Tensor | None = None,
     ):
         (q, q_rstd, k, k_rstd, v, g_cumsum, g_input, beta_raw, beta, A_log, dt_bias, Aqk, Akk,
          w, u, qg, kg, v_new, h,
@@ -169,12 +175,17 @@ class ChunkKDAFunction(torch.autograd.Function):
         if ctx.use_beta_sigmoid_in_kernel:
             db = fused_beta_sigmoid_bwd(beta_raw, db, scale=2.0 if ctx.allow_neg_eigval else 1.0)
 
-        return (dq.to(q), dk.to(k), dv.to(v), dg.to(g_input), db.to(beta_raw), dA, dbias, None, dh0,
-                None, None, None, None, None, None, None, None, None, None, None, None, None, None)
+        return (
+            (dq.to(q), dk.to(k), dv.to(v), dg.to(g_input), db.to(beta_raw))
+            + ((dA,) if ctx.has_A_log else ())
+            + ((dbias,) if ctx.has_dt_bias else ())
+            + ((dh0,) if ctx.has_initial_state else ())
+            + ((None,) if ctx.has_cu_seqlens else ())
+            + ((None,) if ctx.has_cu_seqlens_cpu else ())
+        )
 
 
 @dispatch('kda')
-@torch.compiler.disable
 def chunk_kda(
     q: torch.Tensor,
     k: torch.Tensor,

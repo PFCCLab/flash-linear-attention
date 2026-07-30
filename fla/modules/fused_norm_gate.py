@@ -656,6 +656,7 @@ class LayerNormGatedFunction(torch.autograd.Function):
         residual_in_fp32: bool = False,
         is_rms_norm: bool = False,
     ):
+        ctx.has_bias = bias is not None
         x_shape_og = x.shape
         g_shape_og = g.shape
         # reshape input data into 2D tensor
@@ -716,16 +717,9 @@ class LayerNormGatedFunction(torch.autograd.Function):
             x_dtype=ctx.x_dtype,
         )
         return (
-            dx.reshape(ctx.x_shape_og),
-            dg.reshape(ctx.g_shape_og),
-            dw,
-            db,
-            None,
-            dres_in.reshape(ctx.x_shape_og) if ctx.has_residual else None,
-            None,
-            None,
-            None,
-            None,
+            (dx.reshape(ctx.x_shape_og), dg.reshape(ctx.g_shape_og), dw)
+            + ((db,) if ctx.has_bias else ())
+            + ((dres_in.reshape(ctx.x_shape_og),) if ctx.has_residual else ())
         )
 
 
