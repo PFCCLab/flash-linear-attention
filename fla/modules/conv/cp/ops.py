@@ -8,8 +8,12 @@
 import torch
 import torch.distributed as dist
 
+# initialize FLA ops before the convolution backend to avoid the modules/ops import cycle.
+# isort: off
 from fla.ops.cp import FLACPContext, conv_cp_send_recv_bwd, conv_cp_send_recv_fwd
 from fla.ops.utils import prepare_chunk_indices
+from fla.modules.conv.triton.ops import causal_conv1d_bwd, causal_conv1d_fwd
+# isort: on
 
 
 class CausalConv1dFunctionCP(torch.autograd.Function):
@@ -129,9 +133,6 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
         chunk_size: int | None,
         backend: str = 'triton',
     ):
-        # Import here to avoid circular dependency
-        from fla.modules.conv.triton.ops import causal_conv1d_fwd
-
         if cp_context is None:
             raise ValueError("cp_context must be provided for CausalConv1dFunctionCP")
         cu_seqlens = cp_context.cu_seqlens
@@ -150,6 +151,8 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
         )
 
         ctx.save_for_backward(x, weight, bias, initial_state)
+        ctx.has_bias = bias is not None
+        ctx.has_chunk_indices = chunk_indices is not None
         ctx.activation = activation
         ctx.cu_seqlens = cu_seqlens
         ctx.cu_seqlens_cpu = cu_seqlens_cpu
@@ -179,9 +182,6 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dy: torch.Tensor):
-        # Import here to avoid circular dependency
-        from fla.modules.conv.triton.ops import causal_conv1d_bwd
-
         x, weight, bias, initial_state = ctx.saved_tensors
         group = ctx.group
         W = ctx.W
@@ -212,7 +212,11 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
             pre_num_conv_tokens=ctx.pre_num_conv_tokens,
         )
 
-        return dx, dw, db, None, None, None, None, None
+        return (
+            (dx, dw)
+            + ((db,) if ctx.has_bias else ())
+            + ((None,) if ctx.has_chunk_indices else ())
+        )
 
 
 def causal_conv1d_cp(
