@@ -253,7 +253,7 @@ def kda_gate_fwd(
     output_dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     H, K = g.shape[-2:]
-    T = g.numel() // (H * K)
+    T = g.shape.numel() // (H * K)
 
     yg = torch.empty_like(g, dtype=output_dtype)
 
@@ -285,7 +285,7 @@ def kda_gate_bwd(
     lower_bound: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
     H, K = g.shape[-2:]
-    T = g.numel() // (H * K)
+    T = g.shape.numel() // (H * K)
     BT = 32
     NT = triton.cdiv(T, BT)
 
@@ -330,6 +330,7 @@ class KDAGateFunction(torch.autograd.Function):
         lower_bound: float | None = None,
         output_dtype: torch.dtype = torch.float32,
     ) -> torch.Tensor:
+        ctx.has_dt_bias = dt_bias is not None
         yg = kda_gate_fwd(
             g=g,
             A_log=A_log,
@@ -353,10 +354,9 @@ class KDAGateFunction(torch.autograd.Function):
             dyg=dyg,
             lower_bound=ctx.lower_bound
         )
-        return dg, dA, dbias, None, None
+        return (dg, dA) + ((dbias,) if ctx.has_dt_bias else ())
 
 
-@torch.compiler.disable
 @dispatch('kda')
 def fused_kda_gate(
     g: torch.Tensor,

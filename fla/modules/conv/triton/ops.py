@@ -61,7 +61,7 @@ def causal_conv1d_fwd(
     NT = len(chunk_indices) if cu_seqlens is not None else triton.cdiv(T, BT)
     NB = triton.cdiv(B*T, 1024)
 
-    y = torch.empty_like(x, memory_format=torch.contiguous_format)
+    y = torch.empty_like(x)
 
     def grid(meta): return (triton.cdiv(D, meta['BD']), NT, B)
     causal_conv1d_fwd_kernel[grid](
@@ -381,6 +381,12 @@ class CausalConv1dFunction(torch.autograd.Function):
         chunk_indices: torch.LongTensor | None = None,
         chunk_size: int = 64,
     ):
+        ctx.has_bias = bias is not None
+        ctx.has_residual = residual is not None
+        ctx.has_initial_state = initial_state is not None
+        ctx.has_cu_seqlens = cu_seqlens is not None
+        ctx.has_cu_seqlens_cpu = cu_seqlens_cpu is not None
+        ctx.has_chunk_indices = chunk_indices is not None
         BT = chunk_size
         if cu_seqlens is not None and chunk_indices is None:
             chunk_indices = prepare_chunk_indices(cu_seqlens, BT, cu_seqlens_cpu=cu_seqlens_cpu)
@@ -424,4 +430,12 @@ class CausalConv1dFunction(torch.autograd.Function):
             chunk_indices=ctx.chunk_indices,
             layout_fallback=ctx.layout_fallback,
         )
-        return dx, dw, db, dr, dh0, None, None, None, None, None, None
+        return (
+            (dx, dw)
+            + ((db,) if ctx.has_bias else ())
+            + ((dr,) if ctx.has_residual else ())
+            + ((dh0,) if ctx.has_initial_state else ())
+            + ((None,) if ctx.has_cu_seqlens else ())
+            + ((None,) if ctx.has_cu_seqlens_cpu else ())
+            + ((None,) if ctx.has_chunk_indices else ())
+        )

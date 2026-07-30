@@ -6,7 +6,6 @@
 #   https://github.com/fla-org/flash-linear-attention/graphs/contributors
 
 import contextlib
-import functools
 import logging
 import os
 import platform
@@ -217,29 +216,18 @@ def check_shared_mem(arch: str = "none", tensor_idx: int = 0) -> bool:
         return False
 
 
-if check_pytorch_version('2.4'):
-    if device == 'cpu':
-        device = 'cuda'
-        device_torch_lib = getattr(torch, device)
-    autocast_custom_fwd = functools.partial(torch.amp.custom_fwd, device_type=device)
-    autocast_custom_bwd = functools.partial(torch.amp.custom_bwd, device_type=device)
+def autocast_custom_fwd(fn):
+    return fn
 
-    def custom_device_ctx(index: int):
-        if index is None:
-            return contextlib.nullcontext()
-        try:
-            return device_torch_lib.device(index)
-        except (AttributeError, AssertionError, RuntimeError):
-            return contextlib.nullcontext()
-else:
-    assert device == 'cuda', 'Only cuda device is supported for PyTorch version < 2.4.0.'
-    autocast_custom_fwd = device_torch_lib.amp.custom_fwd
-    autocast_custom_bwd = device_torch_lib.amp.custom_bwd
 
-    def custom_device_ctx(index: int):
-        if index is None:
-            return contextlib.nullcontext()
-        try:
-            return torch.cuda.device(index)
-        except (AttributeError, AssertionError, RuntimeError):
-            return contextlib.nullcontext()
+def autocast_custom_bwd(fn):
+    return fn
+
+
+def custom_device_ctx(index: int):
+    if index is None:
+        return contextlib.nullcontext()
+    try:
+        return device_torch_lib.device(index)
+    except (AttributeError, AssertionError, RuntimeError):
+        return contextlib.nullcontext()

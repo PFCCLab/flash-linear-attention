@@ -9,6 +9,8 @@
 
 import torch
 
+from fla.modules.conv.cp import causal_conv1d_cp
+from fla.modules.conv.triton import CausalConv1dFunction
 from fla.ops.cp import FLACPContext
 from fla.utils import input_guard
 
@@ -65,11 +67,6 @@ def causal_conv1d(
         Tuple of (output, final_state).
         If `output_final_state` is `False`, the final state is `None`.
     """
-    # Import here to avoid circular dependencies
-    from fla.modules.conv.cp import causal_conv1d_cp
-    from fla.modules.conv.cuda import causal_conv1d_cuda, fast_causal_conv1d_fn
-    from fla.modules.conv.triton import CausalConv1dFunction
-
     if cp_context is not None:
         assert initial_state is None, "Initial state is not supported for CP"
         assert output_final_state is False, "Output final state is not supported for CP"
@@ -98,6 +95,8 @@ def causal_conv1d(
         )
         return y, final_state
     elif backend == 'mix':
+        from fla.modules.conv.cuda import fast_causal_conv1d_fn
+
         seq_idx = kwargs.get('seq_idx')
         return fast_causal_conv1d_fn(
             x,
@@ -113,6 +112,8 @@ def causal_conv1d(
             seq_idx=seq_idx,
         )
     elif backend == 'cuda':
+        from fla.modules.conv.cuda import causal_conv1d_cuda
+
         return causal_conv1d_cuda(
             x,
             weight,

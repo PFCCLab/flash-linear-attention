@@ -57,7 +57,7 @@ _BETA_SIGMOID_NUM_WARPS = 8
 @dispatch('common')
 def fused_beta_sigmoid_fwd(x: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
     y = torch.empty_like(x, dtype=torch.float32)
-    n_elements = x.numel()
+    n_elements = x.shape.numel()
     grid = (triton.cdiv(n_elements, _BETA_SIGMOID_BLOCK_SIZE),)
     fused_beta_sigmoid_fwd_kernel[grid](
         x,
@@ -73,7 +73,7 @@ def fused_beta_sigmoid_fwd(x: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
 @dispatch('common')
 def fused_beta_sigmoid_bwd(x: torch.Tensor, dy: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
     dx = torch.empty_like(x)
-    n_elements = x.numel()
+    n_elements = x.shape.numel()
     grid = (triton.cdiv(n_elements, _BETA_SIGMOID_BLOCK_SIZE),)
     fused_beta_sigmoid_bwd_kernel[grid](
         x,
@@ -103,7 +103,7 @@ class BetaSigmoidFunction(torch.autograd.Function):
     def backward(ctx, dy: torch.Tensor):
         (x,) = ctx.saved_tensors
         dx = fused_beta_sigmoid_bwd(x, dy, ctx.scale)
-        return dx.type_as(x), None
+        return (dx.type_as(x),)
 
 
 def fused_beta_sigmoid(x: torch.Tensor, scale: float = 1.0) -> torch.Tensor:

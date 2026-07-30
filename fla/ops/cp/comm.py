@@ -34,11 +34,16 @@ def all_gather_into_tensor(
     Returns:
         Tuple of (output tensor, handle if async_op else None)
     """
-    world_size = dist.get_world_size(group=group)
+    if async_op:
+        raise NotImplementedError("KDA context parallel currently supports synchronous all-gather only")
+    gathered = []
+    dist.all_gather(gathered, inp, group=group, sync_op=True)
+    gathered_tensor = torch.stack(gathered, dim=0)
     if out is None:
-        out = torch.empty(world_size, *inp.shape, device=inp.device, dtype=inp.dtype)
-    handle = dist.all_gather_into_tensor(out, inp, group=group, async_op=async_op)
-    return out, handle
+        out = gathered_tensor
+    else:
+        out.copy_(gathered_tensor)
+    return out, None
 
 
 def all_reduce_sum(
@@ -57,7 +62,7 @@ def all_reduce_sum(
     Returns:
         Tuple of (reduced tensor, handle if async_op else None)
     """
-    handle = dist.all_reduce(inp, op=dist.ReduceOp.SUM, group=group, async_op=async_op)
+    handle = dist.all_reduce(inp, op=dist.ReduceOp.SUM, group=group, sync_op=not async_op)
     return inp, handle
 
 
