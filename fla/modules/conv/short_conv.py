@@ -9,11 +9,15 @@
 
 from __future__ import annotations
 
+import os
 import warnings
 
 import torch
 import torch.nn as nn
 from einops import rearrange
+
+from fla.modules.conv.causal_conv1d import causal_conv1d
+from fla.modules.conv.triton.ops import causal_conv1d_update
 
 try:
     from causal_conv1d import causal_conv1d_fn as causal_conv1d_fn_cuda
@@ -85,7 +89,6 @@ class ShortConvolution(nn.Conv1d):
                 "The `use_fast_conv1d` parameter is deprecated and will be ignored. "
                 "Please use the `backend` parameter instead.",
             )
-        import os
         self.backend = os.environ.get('FLA_CONV_BACKEND', backend)
         if backend not in ['cuda', 'triton']:
             raise ValueError(f"Invalid backend: {backend}, must be one of ['cuda', 'triton']")
@@ -151,9 +154,6 @@ class ShortConvolution(nn.Conv1d):
         Returns:
             Tensor of shape `[B, T, D]`.
         """
-        # Import here to avoid circular dependency
-        from fla.modules.conv.causal_conv1d import causal_conv1d
-
         B, T, *_ = x.shape
         N = B if cu_seqlens is None else len(cu_seqlens) - 1
         if mask is not None:
@@ -208,8 +208,6 @@ class ShortConvolution(nn.Conv1d):
         output_final_state: bool = False,
         cu_seqlens: torch.LongTensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
-        from fla.modules.conv.triton.ops import causal_conv1d_update
-
         B, _, D, W = *x.shape, self.kernel_size[0]
         N = B if cu_seqlens is None else len(cu_seqlens) - 1
         # Always initialise cache when None so the Triton kernel never
