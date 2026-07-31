@@ -176,7 +176,7 @@ from fla.modules import FusedRMSNormGated, ShortConvolution
 from fla.modules.backends import dispatch as modules_dispatch
 from fla.ops.backends import dispatch as ops_dispatch
 from fla.ops.kda import chunk_kda
-from fla.ops.utils.index import prepare_cu_seqlens_from_mask, prepare_lens_from_mask
+from fla.ops.utils.index import prepare_cu_seqlens_from_mask, prepare_lens_from_mask, prepare_split_cu_seqlens
 from fla.utils import tensor_cache
 
 assert FusedRMSNormGated is not None
@@ -185,6 +185,7 @@ assert modules_dispatch is ops_dispatch
 assert callable(chunk_kda)
 assert callable(prepare_cu_seqlens_from_mask)
 assert callable(prepare_lens_from_mask)
+assert prepare_split_cu_seqlens(batch_size=2, seq_len=5, split_size=3).tolist() == [0, 3, 5, 8, 10]
 assert callable(tensor_cache)
 assert fla.modules is sys.modules["fla.modules"]
 assert fla.modules.conv.cp is sys.modules["fla.modules.conv.cp"]
