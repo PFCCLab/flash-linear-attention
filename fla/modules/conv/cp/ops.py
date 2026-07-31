@@ -35,7 +35,7 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
         weight: torch.Tensor,
         cu_seqlens: torch.Tensor | None,
         context: FLACPContext,
-        group: dist.ProcessGroup | None,
+        group: "dist.ProcessGroup | None",
     ) -> torch.Tensor | None:
         """Prepare initial_state for CP forward pass by communicating with previous rank.
 
@@ -81,7 +81,7 @@ class CausalConv1dFunctionCP(torch.autograd.Function):
         dx: torch.Tensor,
         dh0: torch.Tensor | None,
         W: int,
-        group: dist.ProcessGroup | None,
+        group: "dist.ProcessGroup | None",
         is_first_rank: bool,
         pre_num_conv_tokens: int = 0,
     ) -> None:
