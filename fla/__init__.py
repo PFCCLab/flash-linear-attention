@@ -7,8 +7,25 @@
 
 from pkgutil import extend_path
 
+import paddle
+
 __path__ = extend_path(__path__, __name__)
 __version__ = "0.6.0"
+
+
+def _torch_compat_empty(*args, **kwargs):
+    if kwargs.get("device") == "cuda":
+        del kwargs["device"]
+    return paddle.empty(*args, **kwargs)
+
+
+paddle.compat.proxy._extend_torch_proxy_overrides(
+    {
+        "torch.empty": paddle.compat.proxy.RawOverriddenAttribute(
+            _torch_compat_empty
+        ),
+    }
+)
 
 from fla import modules, ops  # noqa: E402
 
