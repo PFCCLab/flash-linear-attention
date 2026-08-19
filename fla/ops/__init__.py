@@ -5,6 +5,6 @@
 # For a list of all contributors, visit:
 #   https://github.com/fla-org/flash-linear-attention/graphs/contributors
 
-from fla.ops import cp, kda, utils
+from fla.ops import attnres, cp, kda, utils
 
-__all__ = ["cp", "kda", "utils"]
+__all__ = ["attnres", "cp", "kda", "utils"]
