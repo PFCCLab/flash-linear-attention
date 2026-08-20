@@ -74,7 +74,8 @@ def causal_conv1d_fwd_kernel(
         p_x = x + tl.cast(i_b, tl.int64) * stride_x_n
 
     o_d = i_d * BD + tl.arange(0, BD)
-    o_t = i_t * BT + tl.arange(0, BT)
+    # keep time offsets in int64: `o_t * stride_x_t` / `o_t * D` overflow int32 once T*D > 2^31
+    o_t = (i_t * BT + tl.arange(0, BT)).to(tl.int64)
     o_w = tl.arange(0, BW) + W - BW
     m_d = o_d < D
     m_w = o_w >= 0
@@ -105,7 +106,7 @@ def causal_conv1d_fwd_kernel(
                 b_yi *= tl.sum(b_w * (o_w == (i_w + W - 1)), 1)
             b_y += b_yi
     else:
-        o_t = i_t * BT + tl.arange(0, BT)
+        o_t = (i_t * BT + tl.arange(0, BT)).to(tl.int64)
         for i_w in tl.static_range(-W + 1, 1):
             o_x = o_t + i_w
             m_x = ((o_x >= 0) & (o_x < T))[:, None] & m_d
@@ -210,7 +211,8 @@ def causal_conv1d_bwd_kernel(
         p_dy = dy + tl.cast(i_b, tl.int64) * stride_dy_n
 
     o_d = i_d * BD + tl.arange(0, BD)
-    o_t = i_t * BT + tl.arange(0, BT)
+    # keep time offsets in int64: `o_t * stride_{x,dy,dx}_t` / `o_t * D` overflow int32 once T*D > 2^31
+    o_t = (i_t * BT + tl.arange(0, BT)).to(tl.int64)
     o_w = tl.arange(0, BW) + W - BW
     m_d = o_d < D
     m_w = o_w >= 0
@@ -271,7 +273,7 @@ def causal_conv1d_bwd_kernel(
             b_dx += b_wdy
     else:
         # which may use initial state
-        o_t = i_t * BT + tl.arange(0, BT)
+        o_t = (i_t * BT + tl.arange(0, BT)).to(tl.int64)
         for i_w in tl.static_range(0, W):
             o_dy = o_t + i_w
             p_dy_blk = p_dy + o_dy[:, None] * stride_dy_t + o_d[None, :] * stride_dy_d
@@ -530,7 +532,8 @@ def causal_conv1d_states_fwd_kernel(
         seq_len = T
         p_x = x + tl.cast(i_n, tl.int64) * stride_x_n
 
-    o_x = seq_len - BW + tl.arange(0, BW)
+    # keep time offsets in int64: `o_x * stride_x_t` overflows int32 once T*D > 2^31
+    o_x = (seq_len - BW + tl.arange(0, BW)).to(tl.int64)
     p_x = p_x + o_x[:, None] * stride_x_t + o_d[None, :] * stride_x_d
 
     # b_x Shape: [BW, BD]
