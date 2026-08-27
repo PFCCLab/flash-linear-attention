@@ -422,16 +422,6 @@ def chunk_kda(
     assert g.shape == (B, T, HV, K), f"g must have shape [B, T, HV, K]={[B, T, HV, K]}, got {list(g.shape)}"
     assert beta.shape == (B, T, HV), f"beta must have shape [B, T, HV]={[B, T, HV]}, got {list(beta.shape)}"
 
-    # the chunk kernels still derive q/k/v/g addresses from int32 program ids, so element offsets
-    # beyond 2^31 silently wrap and trigger an illegal memory access instead of a readable error
-    numel = B * T * HV * max(K, v.shape[3])
-    if numel > 2**31 - 1:
-        raise ValueError(
-            f"chunk_kda cannot address more than 2^31-1 elements per tensor, but B*T*HV*max(K, V) = {numel}. "
-            f"Got B={B}, T={T}, HV={HV}, K={K}, V={v.shape[3]}. "
-            f"Split the sequence (e.g. with context parallel or a shorter `T`) so that the product stays below 2^31.",
-        )
-
     if scale is None:
         scale = K ** -0.5
     return ChunkKDAFunction.apply(
