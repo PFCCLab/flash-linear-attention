@@ -171,7 +171,10 @@ def test_chunk_kda_dense_forward_backward(disable_recompute: bool):
         "g": 0.02,
         "beta": 0.02,
         "A_log": 0.02,
-        "dt_bias": 0.008,
+        # ddt_bias is a signed sum of dg over all B*T positions, so it cannot be more
+        # accurate than dg itself: the reference partially cancels while bf16 errors
+        # accumulate. Give it the same budget as dg instead of a tighter one.
+        "dt_bias": 0.02,
         "h0": 0.008,
     }.items():
         assert_close(f"d{name}", ref_inputs[name].grad, tri_inputs[name].grad, tolerance)
