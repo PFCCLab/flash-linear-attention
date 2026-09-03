@@ -114,7 +114,7 @@ def _run_dense_reference(
 
 def test_kda_dependency_closure():
     loaded = {name for name in sys.modules if name == "fla" or name.startswith("fla.")}
-    allowed_op_roots = {"backends", "common", "cp", "gla", "kda", "utils"}
+    allowed_op_roots = {"attnres", "backends", "common", "cp", "gla", "kda", "utils"}
     loaded_op_roots = {
         name.split(".")[2]
         for name in loaded
