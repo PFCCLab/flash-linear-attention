@@ -351,7 +351,7 @@ def merge_fwd_bwd_kernel(
     HAS_H0: tl.constexpr,                  # Heuristic: whether h0 is provided
     STATE_V_FIRST: tl.constexpr = False,  # When True, h0/h use [V, K] layout; ag_hm always [K, V+K]
     AFFINE_CHAIN_PRECISION: tl.constexpr = None,  # input_precision for M@h in the state update (h' = M @ h + he)
-    BKR: tl.constexpr = 1024,  # CP mode only: row-block size of M; BKR >= BK keeps the single-tile path
+    BKR: tl.constexpr = 1024,  # row-block size of M for large K; BKR >= BK keeps the single-tile path
 ):
     """
     Unified merge kernel for both CP and Intra-card modes.
