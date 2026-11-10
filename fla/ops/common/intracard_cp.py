@@ -356,6 +356,7 @@ def intracard_merge(
         K=K,
         V=V,
         BK=BK,
+        BKR=BK if BK <= 128 else 64,
         FORWARD=True,
         INTRACARD_MODE=True,
         NUM_SEQ_ENTRIES=num_split_seqs,
