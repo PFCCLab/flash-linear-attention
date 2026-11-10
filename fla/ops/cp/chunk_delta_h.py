@@ -351,6 +351,7 @@ def merge_fwd_bwd_kernel(
     HAS_H0: tl.constexpr,                  # Heuristic: whether h0 is provided
     STATE_V_FIRST: tl.constexpr = False,  # When True, h0/h use [V, K] layout; ag_hm always [K, V+K]
     AFFINE_CHAIN_PRECISION: tl.constexpr = None,  # input_precision for M@h in the state update (h' = M @ h + he)
+    BKR: tl.constexpr = 1024,  # CP mode only: row-block size of M; BKR >= BK keeps the single-tile path
 ):
     """
     Unified merge kernel for both CP and Intra-card modes.
@@ -404,33 +405,69 @@ def merge_fwd_bwd_kernel(
                 b_h = tl.zeros([BK, BV], dtype=tl.float32)
 
         # Merge loop over subseqs
-        for idx in range(num_subseqs):
-            i_ss = ss_start + idx
-            base = i_ss * stride_hm_s + i_h * stride_hm_h
+        if BKR >= BK:
+            for idx in range(num_subseqs):
+                i_ss = ss_start + idx
+                base = i_ss * stride_hm_s + i_h * stride_hm_h
 
-            # he and m are always in [K, V+K] layout from pre_scan
-            p_he = ag_hm + base + o_k[:, None] * (V + K) + o_v[None, :]
-            b_he = tl.load(p_he, mask=m_k[:, None] & m_v[None, :], other=0.0).to(tl.float32)
-            p_m = ag_hm + base + V + o_k[:, None] * (V + K) + o_k[None, :]
-            b_m = tl.load(p_m, mask=m_k[:, None] & m_k[None, :], other=0.0).to(tl.float32)
-            if STATE_V_FIRST:
-                # h_T' = h_T @ M^T + he^T
-                b_h = tl.dot(b_h.to(tl.float32), tl.trans(b_m), input_precision=AFFINE_CHAIN_PRECISION) + tl.trans(b_he)
-            else:
-                b_h = tl.dot(b_m.to(tl.float32), b_h.to(tl.float32),
-                             input_precision=AFFINE_CHAIN_PRECISION) + b_he.to(tl.float32)
-
-            # Store for non-first subseqs
-            if idx < num_subseqs - 1:
-                init_idx = init_base + idx
-                stride_init = HV * K * V
+                # he and m are always in [K, V+K] layout from pre_scan
+                p_he = ag_hm + base + o_k[:, None] * (V + K) + o_v[None, :]
+                b_he = tl.load(p_he, mask=m_k[:, None] & m_v[None, :], other=0.0).to(tl.float32)
+                p_m = ag_hm + base + V + o_k[:, None] * (V + K) + o_k[None, :]
+                b_m = tl.load(p_m, mask=m_k[:, None] & m_k[None, :], other=0.0).to(tl.float32)
                 if STATE_V_FIRST:
-                    p_out = h + init_idx * stride_init + i_h * V * K + o_v[:, None] * K + o_k[None, :]
-                    m_out = m_v[:, None] & m_k[None, :]
+                    # h_T' = h_T @ M^T + he^T
+                    b_h = tl.dot(b_h.to(tl.float32), tl.trans(b_m), input_precision=AFFINE_CHAIN_PRECISION) + tl.trans(b_he)
                 else:
-                    p_out = h + init_idx * stride_init + i_h * K * V + o_k[:, None] * V + o_v[None, :]
-                    m_out = m_k[:, None] & m_v[None, :]
-                tl.store(p_out, b_h.to(p_out.dtype.element_ty), mask=m_out)
+                    b_h = tl.dot(b_m.to(tl.float32), b_h.to(tl.float32),
+                                 input_precision=AFFINE_CHAIN_PRECISION) + b_he.to(tl.float32)
+
+                # Store for non-first subseqs
+                if idx < num_subseqs - 1:
+                    init_idx = init_base + idx
+                    stride_init = HV * K * V
+                    if STATE_V_FIRST:
+                        p_out = h + init_idx * stride_init + i_h * V * K + o_v[:, None] * K + o_k[None, :]
+                        m_out = m_v[:, None] & m_k[None, :]
+                    else:
+                        p_out = h + init_idx * stride_init + i_h * K * V + o_k[:, None] * V + o_v[None, :]
+                        m_out = m_k[:, None] & m_v[None, :]
+                    tl.store(p_out, b_h.to(p_out.dtype.element_ty), mask=m_out)
+        else:
+            # Large K (e.g. 256): a full fp32 [BK, BK] M tile does not fit in shared memory.
+            # Compute h' = M @ h + he in row blocks of M and stage h' through its output slot
+            # in `h` (fp32, owned by this program's V slice), then reload it. The state after
+            # the last subseq is never stored, so that iteration is skipped.
+            stride_init = HV * K * V
+            for idx in range(num_subseqs - 1):
+                i_ss = ss_start + idx
+                base = i_ss * stride_hm_s + i_h * stride_hm_h
+                h_out = h + (init_base + idx) * stride_init + i_h * K * V
+                for i_r in tl.static_range(BK // BKR):
+                    o_r = i_r * BKR + tl.arange(0, BKR)
+                    m_r = o_r < K
+                    p_he = ag_hm + base + o_r[:, None] * (V + K) + o_v[None, :]
+                    b_he = tl.load(p_he, mask=m_r[:, None] & m_v[None, :], other=0.0).to(tl.float32)
+                    p_m = ag_hm + base + V + o_r[:, None] * (V + K) + o_k[None, :]
+                    b_m = tl.load(p_m, mask=m_r[:, None] & m_k[None, :], other=0.0).to(tl.float32)
+                    if STATE_V_FIRST:
+                        b_new = tl.dot(b_h.to(tl.float32), tl.trans(b_m),
+                                       input_precision=AFFINE_CHAIN_PRECISION) + tl.trans(b_he)
+                        p_new = h_out + o_v[:, None] * K + o_r[None, :]
+                        tl.store(p_new, b_new.to(p_new.dtype.element_ty), mask=m_v[:, None] & m_r[None, :])
+                    else:
+                        b_new = tl.dot(b_m, b_h.to(tl.float32),
+                                       input_precision=AFFINE_CHAIN_PRECISION) + b_he
+                        p_new = h_out + o_r[:, None] * V + o_v[None, :]
+                        tl.store(p_new, b_new.to(p_new.dtype.element_ty), mask=m_r[:, None] & m_v[None, :])
+                tl.debug_barrier()
+                if STATE_V_FIRST:
+                    p_cur = h_out + o_v[:, None] * K + o_k[None, :]
+                    b_h = tl.load(p_cur, mask=m_v[:, None] & m_k[None, :], other=0.0).to(tl.float32)
+                else:
+                    p_cur = h_out + o_k[:, None] * V + o_v[None, :]
+                    b_h = tl.load(p_cur, mask=m_k[:, None] & m_v[None, :], other=0.0).to(tl.float32)
+                tl.debug_barrier()
     else:
         # CP mode
         i_h = tl.program_id(1)
@@ -440,29 +477,52 @@ def merge_fwd_bwd_kernel(
         stride = HV * K * (K + V)
         if STATE_V_FIRST:
             b_h = tl.zeros([BV, BK], dtype=tl.float32)
+            p_h = h + o_v[:, None] * K + o_k[None, :]
+            m_h = m_v[:, None] & m_k[None, :]
         else:
             b_h = tl.zeros([BK, BV], dtype=tl.float32)
+            p_h = h + o_k[:, None] * V + o_v[None, :]
+            m_h = m_k[:, None] & m_v[None, :]
         for idx in range(num_ranks):
             if FORWARD:
                 cur_rank = rank - num_ranks + idx
             else:
                 cur_rank = rank + num_ranks - idx
-            p_ag_h = ag_hm + cur_rank * stride + o_k[:, None] * (K + V) + o_v[None, :]
-            b_ag_h = tl.load(p_ag_h, mask=m_k[:, None] & m_v[None, :], other=0.0)
-            p_ag_m = ag_hm + cur_rank * stride + V + o_k[:, None] * (K + V) + o_k[None, :]
-            b_ag_m = tl.load(p_ag_m, mask=m_k[:, None] & m_k[None, :], other=0.0)
-            if STATE_V_FIRST:
-                b_h = tl.dot(b_h.to(tl.float32), tl.trans(b_ag_m).to(tl.float32),
-                             input_precision=AFFINE_CHAIN_PRECISION) + tl.trans(b_ag_h).to(tl.float32)
+            if BKR >= BK:
+                p_ag_h = ag_hm + cur_rank * stride + o_k[:, None] * (K + V) + o_v[None, :]
+                b_ag_h = tl.load(p_ag_h, mask=m_k[:, None] & m_v[None, :], other=0.0)
+                p_ag_m = ag_hm + cur_rank * stride + V + o_k[:, None] * (K + V) + o_k[None, :]
+                b_ag_m = tl.load(p_ag_m, mask=m_k[:, None] & m_k[None, :], other=0.0)
+                if STATE_V_FIRST:
+                    b_h = tl.dot(b_h.to(tl.float32), tl.trans(b_ag_m).to(tl.float32),
+                                 input_precision=AFFINE_CHAIN_PRECISION) + tl.trans(b_ag_h).to(tl.float32)
+                else:
+                    b_h = tl.dot(b_ag_m.to(tl.float32), b_h.to(tl.float32),
+                                 input_precision=AFFINE_CHAIN_PRECISION) + b_ag_h.to(tl.float32)
             else:
-                b_h = tl.dot(b_ag_m.to(tl.float32), b_h.to(tl.float32),
-                             input_precision=AFFINE_CHAIN_PRECISION) + b_ag_h.to(tl.float32)
-        if STATE_V_FIRST:
-            p_h = h + o_v[:, None] * K + o_k[None, :]
-            m_h = m_v[:, None] & m_k[None, :]
-        else:
-            p_h = h + o_k[:, None] * V + o_v[None, :]
-            m_h = m_k[:, None] & m_v[None, :]
+                # Large K (e.g. 256): a full fp32 [BK, BK] M tile does not fit in shared memory.
+                # Compute h' = M @ h + he in row blocks of M, staging h' through the fp32
+                # output buffer `h` (each program owns its own V slice), then reload.
+                for i_r in tl.static_range(BK // BKR):
+                    o_r = i_r * BKR + tl.arange(0, BKR)
+                    m_r = o_r < K
+                    p_ag_h = ag_hm + cur_rank * stride + o_r[:, None] * (K + V) + o_v[None, :]
+                    b_ag_h = tl.load(p_ag_h, mask=m_r[:, None] & m_v[None, :], other=0.0)
+                    p_ag_m = ag_hm + cur_rank * stride + V + o_r[:, None] * (K + V) + o_k[None, :]
+                    b_ag_m = tl.load(p_ag_m, mask=m_r[:, None] & m_k[None, :], other=0.0)
+                    if STATE_V_FIRST:
+                        b_new = tl.dot(b_h.to(tl.float32), tl.trans(b_ag_m).to(tl.float32),
+                                       input_precision=AFFINE_CHAIN_PRECISION) + tl.trans(b_ag_h).to(tl.float32)
+                        p_new = h + o_v[:, None] * K + o_r[None, :]
+                        tl.store(p_new, b_new.to(p_new.dtype.element_ty), mask=m_v[:, None] & m_r[None, :])
+                    else:
+                        b_new = tl.dot(b_ag_m.to(tl.float32), b_h.to(tl.float32),
+                                       input_precision=AFFINE_CHAIN_PRECISION) + b_ag_h.to(tl.float32)
+                        p_new = h + o_r[:, None] * V + o_v[None, :]
+                        tl.store(p_new, b_new.to(p_new.dtype.element_ty), mask=m_r[:, None] & m_v[None, :])
+                tl.debug_barrier()
+                b_h = tl.load(p_h, mask=m_h, other=0.0).to(tl.float32)
+                tl.debug_barrier()
         tl.store(p_h, b_h.to(p_h.dtype.element_ty), mask=m_h)
 
 
@@ -837,6 +897,7 @@ def chunk_gated_delta_rule_fwd_h_pre_process(
             K=K,
             V=V,
             BK=BK,
+            BKR=BK if BK <= 128 else 64,
             FORWARD=True,
             INTRACARD_MODE=False,
             NUM_SEQ_ENTRIES=0,
@@ -940,6 +1001,7 @@ def chunk_gated_delta_rule_bwd_dhu_pre_process(
             K=K,
             V=V,
             BK=BK,
+            BKR=BK if BK <= 128 else 64,
             FORWARD=False,
             INTRACARD_MODE=False,
             NUM_SEQ_ENTRIES=0,
